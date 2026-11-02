@@ -431,6 +431,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const mayEdit = () => !!state.user && EDITORS.includes(state.user.role);
   // A D0 whose bid day has passed and nobody gave it a status: a lead we let go by.
   const closed = r => !!(r.awarded || r.result || r.cancelled);
+  // what the card's button says: update, record after the result (bid / no bid only), or just view
+  const actLabel = r => !mayEdit() ? "ดูรายละเอียด" : !closed(r) ? "อัปเดตสถานะ" : r.cancelled ? "ดูรายละเอียด" : "บันทึกย้อนหลัง";
   const missed = r => !r.status && r.type === "D0" && !r.cancelled && daysTo(r.bid_date) !== null && daysTo(r.bid_date) < 0;
   // One status per lead, first match wins: cancelled, then what someone pressed, then a bid day that passed
   // with nobody pressing anything, else no status yet. The Lead filters count each lead once.
@@ -574,7 +576,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       </div>
       <div class="money"><span class="label">${r.type === "P0" ? "งบตามแผน" : "งบประมาณ"}</span>
         <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
-        <span class="act btn sm ${canEdit ? "primary" : ""}">${canEdit ? "อัปเดตสถานะ" : "ดูรายละเอียด"}</span></div>
+        <span class="act btn sm ${canEdit ? "primary" : ""}">${actLabel(r)}</span></div>
     </a>`;
   }
 
@@ -590,7 +592,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     // every count leaves the plans out (they have their own box under the table by type)
     const noStatus = announced.filter(r => leadState(r) === "none");
     const bid = announced.filter(bidDone);
-    const soon = leads.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
+    // still open for bids: not cancelled, no winner announced
+    const soon = leads.filter(r => r.type === "D0" && !["cancelled", "awarded"].includes(leadState(r))
+        && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
     const byType = ["D0", "15", "B0"].map(t => [t, leads.filter(r => r.type === t)]);
@@ -752,7 +756,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
         ${num(r.bid_price) !== null ? `<span class="small muted">ราคาที่ยื่น ${baht(r.bid_price)}</span>` : ""}
         ${r.winner_price && r.result ? `<span class="small muted">ราคาที่ชนะ ${baht(r.winner_price)}</span>` : ""}
-        <span class="act btn sm ${mayEdit() && !closed(r) ? "primary" : ""}">${mayEdit() && !closed(r) ? "อัปเดตสถานะ" : "ดูรายละเอียด"}</span></div></a>`; };
+        <span class="act btn sm ${mayEdit() && !closed(r) ? "primary" : ""}">${actLabel(r)}</span></div></a>`; };
     body.innerHTML = `
       <div class="card">
         <div class="chips" role="group" aria-label="ขั้น">${STAGES.map(([k, l, f]) =>
@@ -1034,13 +1038,15 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     window.scrollTo(0, 0);
     const lead = p.get("lead");
     const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
-    if (p.get("status")) state.l.status = p.get("status");
+    // a link with a filter value the page does not know (old or mistyped) falls back to the default
     const methodKey = k => METHOD_FILTERS.some(f => f[0] === k) ? k : "all";
-    if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; state.l.method = methodKey(p.get("method")); }
-    if (p.get("sort")) state.l.sort = p.get("sort");
+    const known = (list, k, dflt) => list.some(f => f[0] === k) ? k : dflt;
+    if (p.get("status")) state.l.status = known(STATUS_FILTERS, p.get("status"), "all");
+    if (p.get("type")) { state.l.type = known(TYPE_FILTERS, p.get("type"), "all"); state.l.score = known(SCORE_FILTERS, p.get("score"), "all"); state.l.method = methodKey(p.get("method")); }
+    if (p.get("sort")) state.l.sort = SORTS[p.get("sort")] ? p.get("sort") : "score";
     // ผลลัพธ์ opened from a ภาพรวม tile: same score / method, and the tile's list open
     if (view === "results" && ["score", "method", "open"].some(k => p.has(k))) {
-      Object.assign(state.r, { score: p.get("score") || "all", method: methodKey(p.get("method")), open: p.get("open") || null, shown: 100 });
+      Object.assign(state.r, { score: known(SCORE_FILTERS, p.get("score"), "all"), method: methodKey(p.get("method")), open: p.get("open") || null, shown: 100 });
     }
     if (lead) { renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from")); }
     currentView = view;

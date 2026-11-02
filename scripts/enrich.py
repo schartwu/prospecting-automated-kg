@@ -197,6 +197,20 @@ class Enricher:
             self.db.rpc("set_department_name", {"p_code": code, "p_name": name})
         self.stats["named" if name else "name not found"] += 1
 
+    def name_announcement(self, r):
+        """A Lead stored from the nationwide feed with no department (before 30 Oct 2026): its document's
+        heading names the agency ("ประกาศ<หน่วยงาน> เรื่อง ...")."""
+        try:
+            name = docs.parse_department(docs.normalize(docs.fetch_text(r["link"])[0]))
+        except Exception as e:
+            self.stats["lead dept retry later" if transient(e) else "lead dept error"] += 1
+            if transient(e):
+                time.sleep(BACK_OFF_SECONDS)
+            return
+        if name:
+            self.db.rpc("set_announcement_dept_name", {"p_id": r["id"], "p_project": r.get("project_no"), "p_name": name})
+        self.stats["lead dept named" if name else "lead dept not found"] += 1
+
     def add_province(self, link, rows):
         """Rows read before provinces were added: fetch the document again and add only the province."""
         try:
@@ -268,6 +282,9 @@ def main():
     e = Enricher(db, gemini, not args.no_ai)
     for d in db.rpc("departments_to_name", {"p_limit": args.name_departments}) if args.name_departments else []:
         e.name_department(d["code"], d["link"])
+        time.sleep(1)
+    for r in db.rpc("nationwide_to_name", {"p_limit": 30}) if args.name_departments else []:
+        e.name_announcement(r)
         time.sleep(1)
     print(f"department names: {dict(e.stats)}", flush=True)
 
