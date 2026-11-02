@@ -37,11 +37,16 @@ def fetch_due(db):
             return rows
 
 
+def cell(v):
+    """Text from e-GP opened in Excel: a leading = + - @ would run as a formula, so it is quoted as text."""
+    return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
 def zipped_csv(rows, name):
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=COLUMNS)
     w.writeheader()
-    w.writerows(rows)
+    w.writerows({k: cell(v) for k, v in r.items()} for r in rows)
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(name, buf.getvalue().encode("utf-8-sig"))  # BOM so Excel shows Thai correctly

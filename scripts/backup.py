@@ -22,12 +22,17 @@ TABLES = {
 }
 
 
+def cell(v):
+    """Notes are typed by users and the file is opened in Excel: a leading = + - @ would run as a formula."""
+    return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
 def to_csv(rows, columns):
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=columns)
     w.writeheader()
     for r in rows:
-        w.writerow({k: ("|".join(v) if isinstance(v, list) else v) for k, v in r.items()})
+        w.writerow({k: cell("|".join(v) if isinstance(v, list) else v) for k, v in r.items()})
     return buf.getvalue().encode("utf-8-sig")  # BOM so Excel shows Thai correctly
 
 
