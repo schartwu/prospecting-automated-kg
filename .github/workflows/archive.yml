@@ -1,0 +1,27 @@
+name: Weekly archive before cleanup
+
+# Emails the announcements the weekly cleanup will delete (not relevant, older than 30 days) as a zipped CSV
+# and marks them archived; cleanup_old_data deletes only archived rows (scripts/archive.py).
+# Started by Supabase pg_cron 'egp-weekly-archive' on Saturday 15:00 Bangkok, before the Sunday 02:00 cleanup.
+on:
+  workflow_dispatch:
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Archive and email
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          BACKUP_RECIPIENTS: ${{ vars.BACKUP_RECIPIENTS }}
+        run: python scripts/archive.py
