@@ -1,5 +1,5 @@
 """Judge whether a procurement title is something OfficeMate can supply, using Gemini."""
-from egp.gemini import FLASH_FIRST, Gemini
+from egp.gemini import FLASH_FIRST, SCAN_RESERVE, Gemini
 
 CATEGORIES = [
     "กระดาษและเครื่องเขียน",
@@ -75,7 +75,7 @@ def classify_titles(rows: list[dict], gemini: Gemini) -> list[dict]:
         if missing:
             raise ValueError(f"model skipped ids {sorted(missing)[:10]}")
 
-    answer, model = gemini.json(prompt, SCHEMA, FLASH_FIRST, validate=complete)
+    answer, model = gemini.json(prompt, SCHEMA, FLASH_FIRST, validate=complete, reserve=SCAN_RESERVE)
     by_id = {v["id"]: v for v in answer}
     out = []
     for i, r in enumerate(rows):

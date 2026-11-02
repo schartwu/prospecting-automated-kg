@@ -22,6 +22,10 @@ FLASH_FIRST = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash",
                "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"]
 LITE_FIRST = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite",
               "gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.8-flash"]
+# Requests per Flash model kept back from classification for reading scanned documents (enrich.py reads
+# scans with Flash only). Since local governments were added (29 Oct 2026) classification used all of
+# 3.8/3.6-flash every evening and scanned reference prices (15) waited until they dropped out.
+SCAN_RESERVE = 6
 SECONDS_BETWEEN_CALLS = 13  # free tier allows 5 requests per minute per model
 
 
@@ -41,15 +45,17 @@ class Gemini:
         self.skip: set[str] = set()  # models out of budget/quota or not offered to this key
 
     def json(self, prompt: str, schema: dict, models: list[str], validate=None, max_output: int = 32768,
-             attachments: list[tuple[str, bytes]] = ()):
+             attachments: list[tuple[str, bytes]] = (), reserve: int = 0):
         """Return (parsed_json, model). validate(parsed) may raise ValueError to reject an answer.
-        attachments: (mime type, bytes) files sent with the prompt, e.g. a scanned PDF to read."""
+        attachments: (mime type, bytes) files sent with the prompt, e.g. a scanned PDF to read.
+        reserve: requests of each non-Lite model's daily budget this call must leave unused."""
         errors = []
         for model in models:
             if model in self.skip:
                 continue
             try:
-                return self._call(model, prompt, schema, validate, max_output, attachments), model
+                budget = BUDGETS[model] - (0 if "lite" in model else reserve)
+                return self._call(model, prompt, schema, validate, max_output, attachments, budget=budget), model
             except _ModelUnavailable as e:
                 self.skip.add(model)
                 errors.append(str(e))
@@ -59,7 +65,7 @@ class Gemini:
             raise QuotaExhausted(" | ".join(errors))
         raise RuntimeError(" | ".join(errors))
 
-    def _call(self, model, prompt, schema, validate, max_output, attachments=(), retries: int = 2):
+    def _call(self, model, prompt, schema, validate, max_output, attachments=(), retries: int = 2, budget=None):
         config = {"temperature": 0, "responseMimeType": "application/json", "responseSchema": schema,
                   "maxOutputTokens": max_output}
         if model.startswith("gemini-2.5"):
@@ -73,7 +79,7 @@ class Gemini:
         last = None
         for _ in range(retries):
             # Every HTTP call counts against Google's quota, retries included, so reserve each one.
-            if not self.take(model, BUDGETS[model]):
+            if not self.take(model, BUDGETS[model] if budget is None else budget):
                 raise _ModelUnavailable(f"{model}: today's budget used up")
             try:
                 resp = requests.post(GEMINI_URL.format(model=model), json=body, timeout=180,

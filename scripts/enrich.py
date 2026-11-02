@@ -123,15 +123,19 @@ class Enricher:
                     bid_time = bid_time or a_time
                     detail["item_count"] = items
                     source = f"ai:{model}" + (":scan" if scanned else "")
-                except QuotaExhausted:
+                except QuotaExhausted as e:
                     if scanned:
-                        self.stats["retry later"] += 1  # Flash models used up today; read it next run
+                        # Flash models used up today; read it next run. Logged: these waited silently for
+                        # weeks before (scanned 15 of 69109365521, Nov 2026).
+                        self.stats["scan waits: Flash used up"] += 1
+                        print(f"  scan of {r['announce_type']} {r['link'][-40:]} waits: {str(e)[:200]}", flush=True)
                         return
                     self.ai_ok = False
                     print("::warning::Gemini budget used up; remaining documents use code patterns only")
                 except RuntimeError as e:
                     if scanned:
-                        self.stats["retry later"] += 1
+                        self.stats["scan waits: error"] += 1
+                        print(f"  scan of {r['announce_type']} {r['link'][-40:]} waits: {str(e)[:200]}", flush=True)
                         return
                     detail["error"] = f"ai: {str(e)[:200]}"
             self.fix_department_name(r, text)
