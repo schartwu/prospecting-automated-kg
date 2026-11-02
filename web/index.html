@@ -420,7 +420,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     cache: {}, leads: null, outcomes: null, tracking: null,
     l: { type: "D0", score: "all", method: "all", status: "none", q: "", sort: "score", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
-    r: { q: "", score: "all", method: "all", shown: 100 },
+    r: { q: "", score: "all", method: "all", shown: 100, open: null },
     o: { score: "all", method: "all" },
   };
   const per = () => state.per[currentView] || state.per.leads;
@@ -436,6 +436,11 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     return st === "cancelled" ? '<span class="pill bad">ยกเลิกแล้ว</span>'
       : st === "awarded" ? (r.result ? statusPill(r.status, r.status_by, r.status_at) : '<span class="pill">ประกาศผู้ชนะแล้ว</span>')
       : st === "missed" ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : statusPill(r.status, r.status_by, r.status_at); };
+  // "ยื่นราคาแล้ว": someone pressed bid, or the result is out after a bid (lost) or a win. The same rule in
+  // ภาพรวม (tile and progress) and the Lead filter, so the tile's number is what its link opens.
+  const bidDone = r => r.status === "bid" || r.result === "lost" || r.result === "win";
+  // e-GP numbers a project's announcements in its links (…&seqNo=4): the highest is the latest
+  const seqNo = link => Number((String(link || "").match(/seqNo=(\d+)/) || [])[1] || 0);
   const inTarget = r => !r.province || state.provinces.includes(r.province);
   const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
   const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
@@ -464,6 +469,13 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // so a project is counted once and its budget once. A plan (P0) joins its project when the database matched
   // them (plan_links: same agency, same budget to the baht, one-to-one); otherwise it stays apart.
   const STAGE = { P0: 0, B0: 1, "15": 2, D0: 3 };
+  // A project's budget: the latest stage that states one (ประกาศเชิญชวน, then ราคากลาง, ร่าง TOR, แผน).
+  // The same rule on the lists and on the project page.
+  const latestBudget = rs => {
+    const b = [...rs].filter(r => r.type in STAGE && num(r.budget_thb) !== null)
+      .sort((a, b) => STAGE[b.type] - STAGE[a.type] || String(b.pub_date).localeCompare(String(a.pub_date)))[0];
+    return b ? b.budget_thb : null;
+  };
   function groupLeads(rows) {
     const by = new Map();
     rows.forEach(r => { const g = by.get(r.lead_key); if (g) g.push(r); else by.set(r.lead_key, [r]); });
@@ -471,7 +483,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       rs.sort((a, b) => STAGE[a.type] - STAGE[b.type] || String(a.pub_date).localeCompare(String(b.pub_date)));
       const top = rs[rs.length - 1], seen = new Set();
       return { ...top, score: Math.max(...rs.map(r => r.score)), linked_plan: rs.map(r => r.linked_plan).find(Boolean) || null,
-        budget_thb: num(top.budget_thb) !== null ? top.budget_thb : (rs.find(r => num(r.budget_thb) !== null) || {}).budget_thb ?? null,
+        budget_thb: latestBudget(rs),
         stages: [...rs].reverse().filter(r => !seen.has(r.type) && seen.add(r.type)).reverse().map(r => ({ type: r.type, pub_date: r.pub_date })) };
     });
   }
@@ -565,7 +577,6 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const O = state.o;
     const leads = state.leads.filter(areaOk).filter(r => inBand(O.score, r)).filter(r => inMethod(O.method, r));
     const outs = state.outcomes.filter(o => o.kind === "result").filter(o => inBand(O.score, o)).filter(o => inMethod(O.method, o));
-    const bidDone = r => r.status === "bid" || r.result === "lost" || r.result === "win";
     const moved = r => !!r.status || bidDone(r);
     const wins = outs.filter(o => o.ours && areaOk(o));
     // The big number follows the Lead funnel; wins with no Lead before them (mostly เฉพาะเจาะจง, which is
@@ -583,11 +594,11 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
       ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
       ["ยื่นราคาแล้ว", bid.length],
-      ["ชนะ (จาก Lead)", announced.filter(r => r.result === "win").length]];
+      ["ชนะ (Lead ในช่วงนี้)", announced.filter(r => r.result === "win").length]];
     const max = Math.max(1, funnel[0][1]);
     const mini = r => `<a class="mini" href="${href({ lead: r.lead_key, from: "overview" })}"><span class="t">${esc(r.title)}</span><span class="amt">${short(r.budget_thb)}</span>
       <span class="small muted">${esc(TYPE[r.type])} · ${esc(r.dept_name || "")}${r.type === "D0" && r.bid_date ? ` · <span class="${daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} (${dueText(r.bid_date)})</span>` : ""}</span>
-      <span>${statusPill(r.status)}</span></a>`;
+      <span>${leadPill(r)}</span></a>`;
     const MISSED_ROW = `<tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">↳ ⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">อยู่ในประกาศเชิญชวนข้างบน: ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>`;
     const COLS = '<colgroup><col><col style="width:64px"><col style="width:118px"></colgroup>';
     const all = state.leads.filter(areaOk);
@@ -596,8 +607,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <div class="kpis">
         <a class="kpi" href="${href({ v: "leads", type: "np", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", type: "np", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
-        <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
-        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">มูลค่า ${short(sum(leadWins, "winner_price"))}</span><span class="sub">+ งานที่ไม่ผ่าน Lead ${otherWins.length.toLocaleString("th-TH")} งาน · ${short(sum(otherWins, "winner_price"))}${otherWins.length && otherWins.every(o => o.method === "เฉพาะเจาะจง") ? " (เฉพาะเจาะจง)" : " (ส่วนใหญ่เฉพาะเจาะจง)"}</span></a>
+        <a class="kpi" href="${href({ v: "leads", type: "np", status: "bid", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยื่นราคาแล้ว (ไม่รวมแผน)</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))} · รวมที่มีผลแล้ว</span></a>
+        <a class="kpi win" href="${href({ v: "results", sync: "overview", score: O.score, method: O.method, open: "leadwins" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">ประกาศผลในช่วงนี้ · มูลค่า ${short(sum(leadWins, "winner_price"))}</span><span class="sub">+ งานที่ไม่ผ่าน Lead ${otherWins.length.toLocaleString("th-TH")} งาน · ${short(sum(otherWins, "winner_price"))}${otherWins.length && otherWins.every(o => o.method === "เฉพาะเจาะจง") ? " (เฉพาะเจาะจง)" : " (ส่วนใหญ่เฉพาะเจาะจง)"}</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
@@ -634,9 +645,13 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
   const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"],
     ["np", "ทั้งหมด ยกเว้นแผนจัดซื้อ"]];
+  // "ยื่นแล้ว" keeps the bids whose result is out (they also count under "ประกาศผู้ชนะแล้ว"), so it shows the
+  // same projects as ภาพรวม's "ยื่นราคาแล้ว" tile; the other states are one per lead.
   const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true],
-    ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"], ["bid", "ยื่นแล้ว"], ["no_bid", "ไม่ยื่น"],
-      ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"], ["awarded", "ประกาศผู้ชนะแล้ว"]].map(([k, l]) => [k, l, r => leadState(r) === k])];
+    ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"]].map(([k, l]) => [k, l, r => leadState(r) === k]),
+    ["bid", "ยื่นแล้ว (รวมที่มีผลแล้ว)", bidDone],
+    ...[["no_bid", "ไม่ยื่น"], ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"], ["awarded", "ประกาศผู้ชนะแล้ว"]]
+      .map(([k, l]) => [k, l, r => leadState(r) === k])];
   const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
     budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
     deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
@@ -762,6 +777,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const res = outs.filter(o => o.kind === "result");
     const byPrice = (a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0);
     const wins = res.filter(o => o.ours).sort(byPrice);
+    const leadWins = wins.filter(o => o.lead_types), otherWins = wins.filter(o => !o.lead_types);
     const leadRes = res.filter(o => o.lead_types).sort(byPrice);
     const lost = leadRes.filter(o => !o.ours);
     const cancelled = outs.filter(o => o.kind === "cancelled");
@@ -784,6 +800,10 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       wins: ["🏆 OfficeMate ชนะ", "รวมงานที่ไม่ได้มาจาก Lead (เช่น เฉพาะเจาะจง)", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"],
         wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
           <td>${o.lead_types ? esc(o.lead_types.map(t => TYPE[t] || t).join(", ")) : '<span class="muted">ไม่มี</span>'}</td></tr>`))],
+      // opened from ภาพรวม's "OfficeMate ชนะ (จาก Lead)" tile
+      leadwins: ["🏆 OfficeMate ชนะ (จาก Lead)", "งานที่เคยส่งเป็น Lead (ร่าง TOR / ราคากลาง / ประกาศเชิญชวน) ก่อนประกาศผู้ชนะ", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "เคยเป็น Lead"],
+        leadWins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
+          <td>${esc(o.lead_types.map(t => TYPE[t] || t).join(", "))}</td></tr>`))],
       leadres: ["Lead ที่ประกาศผลแล้ว", "โครงการที่เคยส่งเป็น Lead (ร่าง TOR / ราคากลาง / ประกาศเชิญชวน) และประกาศผู้ชนะแล้ว", () => table(["โครงการ", "ผล", "ผู้ชนะ", "ราคาที่ชนะ", "งบ"],
         leadRes.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")}</div></td>
           <td>${o.ours ? '<span class="pill win">เราชนะ</span>' : '<span class="pill bad">บริษัทอื่นชนะ</span>'}</td><td>${winner(o)}</td>
@@ -799,8 +819,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       cancelled: ["Lead ถูกยกเลิก", "มีประกาศยกเลิก (D1) ของโครงการที่เคยส่งเป็น Lead", () => table(["โครงการ", "หน่วยงาน", "งบ"],
         cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.budget_thb)}</td></tr>`))],
     };
-    const tile = (k, cls, label, value, sub) => `<button type="button" class="kpi ${cls}" data-detail="${k}" aria-expanded="${R.open === k}">
-      <span class="label">${label}</span><span class="value">${value}</span><span class="sub">${sub}</span><span class="hint">${R.open === k ? "ซ่อนรายการ ▲" : "ดูรายการ ▼"}</span></button>`;
+    const tile = (k, cls, label, value, ...subs) => `<button type="button" class="kpi ${cls}" data-detail="${k}" aria-expanded="${R.open === k}">
+      <span class="label">${label}</span><span class="value">${value}</span>${subs.map(s => `<span class="sub">${s}</span>`).join("")}<span class="hint">${R.open === k ? "ซ่อนรายการ ▲" : "ดูรายการ ▼"}</span></button>`;
     const open = R.open && DETAIL[R.open];
     const rivalRows = top.map(([n, r]) => `<tr class="clickable" data-rival="${esc(n)}" aria-expanded="${R.rival === n}"><td>${R.rival === n ? "▾" : "▸"} ${esc(n)}</td><td class="num">${r.n}</td><td class="num money">${short(r.v)}</td></tr>`
       + (R.rival === n ? `<tr class="sub"><td colspan="3"><div class="small muted" style="margin-bottom:4px">โครงการที่ ${esc(n)} ชนะในช่วงนี้</div>
@@ -808,7 +828,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     body.innerHTML = `
       <div class="card frows">${methodChips(R.method, area.filter(o => inBand(R.score, o)))}${scoreChips(R.score, area.filter(o => inMethod(R.method, o)))}</div>
       <div class="kpis">
-        ${tile("wins", "win", "OfficeMate ชนะ", wins.length, `มูลค่า ${baht(sum(wins, "winner_price"))}`)}
+        ${tile("wins", "win", "OfficeMate ชนะ (ทุกงาน)", wins.length, `มูลค่า ${baht(sum(wins, "winner_price"))}`,
+          `จาก Lead ${leadWins.length} · ไม่ผ่าน Lead ${otherWins.length}`)}
         ${tile("leadres", "", "Lead ที่ประกาศผลแล้ว", leadRes.length, `เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length}`)}
         ${tile("lost", "alert", "Lead ที่บริษัทอื่นชนะ", lost.length, `มูลค่า ${short(sum(lost, "winner_price"))}`)}
         ${tile("cancelled", "", "Lead ถูกยกเลิก", cancelled.length, "ประกาศยกเลิก (D1)")}
@@ -899,10 +920,10 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   function leadSummary(anns) {
     const order = ["D0", "B0", "15", "P0"];
     const main0 = [...anns].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)).find(a => order.includes(a.type)) || anns[0];
-    const budgets = anns.map(a => num(a.budget_thb)).filter(v => v !== null);
-    return { main: main0, budget: budgets.length ? Math.max(...budgets) : null, d0: anns.find(a => a.type === "D0" && a.bid_date),
-      // latest winner announcement: W0, W2 (changed) or W1 (withdrawn)
-      award: [...anns].filter(a => ["W0", "W1", "W2"].includes(a.type)).sort((a, b) => String(a.pub_date).localeCompare(String(b.pub_date))).pop(),
+    return { main: main0, budget: latestBudget(anns), d0: anns.find(a => a.type === "D0" && a.bid_date),
+      // latest winner announcement: W0, W2 (changed) or W1 (withdrawn), by e-GP's seqNo (as project_award)
+      award: [...anns].filter(a => ["W0", "W1", "W2"].includes(a.type))
+        .sort((a, b) => seqNo(a.link) - seqNo(b.link) || String(a.pub_date).localeCompare(String(b.pub_date))).pop(),
       province: anns.map(a => a.province).find(Boolean) || "" };
   }
 
@@ -1004,6 +1025,10 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (p.get("status")) state.l.status = p.get("status");
     if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; state.l.method = p.get("method") || "all"; }
     if (p.get("sort")) state.l.sort = p.get("sort");
+    // ผลลัพธ์ opened from a ภาพรวม tile: same score / method, and the tile's list open
+    if (view === "results" && ["score", "method", "open"].some(k => p.has(k))) {
+      Object.assign(state.r, { score: p.get("score") || "all", method: p.get("method") || "all", open: p.get("open") || null, shown: 100 });
+    }
     if (lead) { renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from")); }
     currentView = view;
     renderNav(view);
@@ -1016,7 +1041,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (sync && state.per[view] && sync !== state.per[view]) Object.assign(state.per[view], sync);
     // The filters a link carried are applied once; the address keeps only the page, so a reload (Ctrl+F5)
     // opens the defaults again instead of the filters of the last link.
-    if (["status", "type", "sort", "score", "method", "sync"].some(k => p.has(k)))
+    if (["status", "type", "sort", "score", "method", "sync", "open"].some(k => p.has(k)))
       history.replaceState(null, "", href({ v: view }));
     if (view === "guide") return guide();
     if (view === "usage") { currentView = "usage"; return usagePage(); }
