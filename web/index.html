@@ -438,7 +438,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     : r.status === "no_bid" ? "no_bid" : r.status ? "doing" : missed(r) ? "missed" : "none";
   const leadPill = r => { const st = leadState(r);
     return st === "cancelled" ? '<span class="pill bad">ยกเลิกแล้ว</span>'
-      : st === "awarded" ? (r.result ? statusPill(r.status, r.status_by, r.status_at) : '<span class="pill">ประกาศผู้ชนะแล้ว</span>')
+      : st === "awarded" ? (!r.result ? '<span class="pill">ประกาศผู้ชนะแล้ว</span>'
+          // the result came out and nobody had pressed a status (as ติดตามสถานะ shows it)
+          : r.status ? statusPill(r.status, r.status_by, r.status_at) : '<span class="pill">ไม่มีการกดสถานะ</span>')
       : st === "missed" ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : statusPill(r.status, r.status_by, r.status_at); };
   // "ยื่นราคาแล้ว": someone pressed bid, or the result is out after a bid (lost) or a win. The same rule in
   // ภาพรวม (tile and progress) and the Lead filter, so the tile's number is what its link opens.
@@ -955,7 +957,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <div><a href="${href({ v: current.from })}">← กลับ</a></div>
       <div class="card hero">
         <div style="display:grid;gap:6px;min-width:0">
-          <div class="chips"><span class="pill type">${esc(TYPE[s.main.type] || s.main.type)}</span>${statusPill(last && last.status)}${outcome}</div>
+          <div class="chips"><span class="pill type">${esc(TYPE[s.main.type] || s.main.type)}</span>${!last && awarded ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(last && last.status)}${outcome}</div>
           <h1>${esc(s.main.title)}</h1>
           <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span>
             ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · ${dueText(s.d0.bid_date)}` : ""}</span>` : ""}
