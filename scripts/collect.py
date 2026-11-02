@@ -98,11 +98,10 @@ def main():
     deadline = time.monotonic() + args.max_minutes * 60
     ok = failed = n_items = capped = 0
     with open(os.path.join(out_dir, "requests.jsonl"), "w", encoding="utf-8") as freq, \
-         open(os.path.join(out_dir, "items.jsonl"), "w", encoding="utf-8") as fitem, \
-         ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(fetch, p): extra for p, extra in reqs}
-        for i, fut in enumerate(as_completed(futures), 1):
-            r, extra = fut.result(), futures[fut]
+         open(os.path.join(out_dir, "items.jsonl"), "w", encoding="utf-8") as fitem:
+
+        def record(r, extra):
+            nonlocal ok, failed, n_items, capped
             ok += r.ok
             failed += not r.ok
             n_items += len(r.items)
@@ -114,14 +113,41 @@ def main():
             for it in r.items:
                 fitem.write(json.dumps({**r.params, **extra, "fetched_at": now.isoformat(), **it},
                                        ensure_ascii=False) + "\n")
-            if i % 200 == 0:
-                print(f"  {i}/{len(reqs)} ok={ok} failed={failed} items={n_items} capped={capped}", flush=True)
-                freq.flush()
-                fitem.flush()
-            if time.monotonic() > deadline:
-                pool.shutdown(wait=False, cancel_futures=True)
-                print(f"  time budget of {args.max_minutes} min reached after {i}/{len(reqs)} requests", flush=True)
-                break
+
+        def run(batch, retries, set_aside, label):
+            """Fetch a batch. With set_aside, failures are returned (params, extra, result) instead of
+            recorded. Stops at the time budget."""
+            later = []
+            with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                futures = {pool.submit(fetch, p, retries=retries): (p, extra) for p, extra in batch}
+                for i, fut in enumerate(as_completed(futures), 1):
+                    r, (p, extra) = fut.result(), futures[fut]
+                    if r.ok or not set_aside:
+                        record(r, extra)
+                    else:
+                        later.append((p, extra, r))
+                    if i % 200 == 0:
+                        print(f"  {label} {i}/{len(batch)} ok={ok} failed={failed} items={n_items} "
+                              f"capped={capped} set aside={len(later)}", flush=True)
+                        freq.flush()
+                        fitem.flush()
+                    if time.monotonic() > deadline:
+                        pool.shutdown(wait=False, cancel_futures=True)
+                        print(f"  time budget of {args.max_minutes} min reached after {i}/{len(batch)} "
+                              f"requests", flush=True)
+                        break
+            return later
+
+        # One try each first: an IP the server is limiting (HTTP 429) used to spend ~3 minutes per request on
+        # back-off and retries (collect shard 3 ran 2-2.7 h on 30 Oct and 1 Nov 2026 while the others took
+        # ~45 min). Failed requests are set aside and tried again, with retries, once the rest is done.
+        later = run(reqs, 0, True, "pass 1")
+        if later and time.monotonic() < deadline:
+            print(f"  retrying {len(later)} failed requests", flush=True)
+            run([(p, extra) for p, extra, _ in later], 2, False, "retry")
+        elif later:
+            for _, extra, r in later:
+                record(r, extra)
 
     print(f"DONE ok={ok} failed={failed} items={n_items} capped_feeds={capped} -> {out_dir}", flush=True)
 
