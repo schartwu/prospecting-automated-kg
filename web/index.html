@@ -904,7 +904,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt><span class="pill warn">🔄 เปลี่ยนผู้ชนะ</span></dt><dd>หน่วยงานเปลี่ยนผู้ชนะ (W2) ระบบใช้ผู้ชนะใหม่ ผลชนะ/แพ้เปลี่ยนตามเอง</dd>
         <dt><span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ</span></dt><dd>หน่วยงานยกเลิกผู้ชนะ (W1) โครงการกลับไปรอผล กดอัปเดตสถานะได้อีกครั้ง</dd>
         <dt>โครงการหายจากหน้า Lead</dt><dd>เมื่อมีประกาศผู้ชนะแล้ว โครงการไม่ใช่ Lead อีก ดูต่อได้ในผลลัพธ์และติดตามสถานะ (บรรทัดใต้ตัวกรองบอกจำนวนที่ซ่อน)</dd>
-        <dt>ปุ่มอัปเดตสถานะถูกปิด</dt><dd>โครงการที่ประกาศผู้ชนะแล้วหรือถูกยกเลิก เพราะสถานะทั้งหมดเป็นขั้นก่อนรู้ผล</dd>
+        <dt>หลังประกาศผู้ชนะ</dt><dd>ในหน้าโครงการยังบันทึกย้อนหลังได้ 2 อย่าง: “ยื่นราคาแล้ว” (ผลเปลี่ยนจาก บริษัทอื่นชนะ เป็น แพ้ และนับในยื่นราคาแล้ว) และ “ไม่ยื่น” สถานะอื่นปิด · ในประวัติมีป้าย “บันทึกหลังประกาศผล” · โครงการที่ถูกยกเลิกปิดการอัปเดตทั้งหมด</dd>
         <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd>
         <dt>การบันทึกการใช้งาน</dt><dd>ระบบบันทึกว่าบัญชีไหนเปิดหน้าไหนเมื่อไร เพื่อดูภาพรวมการใช้งาน ไม่เก็บ IP เก็บย้อนหลัง 180 วัน</dd></dl></div></div></div>`;
   }
@@ -945,9 +945,17 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       : anns.some(a => a.type === "D1") ? '<span class="pill bad">ยกเลิกโครงการ</span>' : "";
     const awarded = !!aw && aw.type !== "W1";
     const locked = awarded || anns.some(a => a.type === "D1");
-    const form = isDV && locked ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">${awarded ? "โครงการนี้ประกาศผู้ชนะแล้ว" : "โครงการนี้ถูกยกเลิกแล้ว"} จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
-      : isDV ? `<div class="card" id="form"><h2>อัปเดตสถานะ</h2>
-        ${GROUPS.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="chips">${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}</div></div>`).join("")}
+    // After the winner is announced only "ยื่นราคาแล้ว" / "ไม่ยื่น" can still be recorded, for a Sale who bid
+    // (or decided not to) and forgot to press it: a recorded bid turns "บริษัทอื่นชนะ" into "แพ้" and counts
+    // in ยื่นราคาแล้ว. Steps before the result (รับเรื่อง, ส่งให้ Mer …) stay closed. A cancelled project stays closed.
+    const retro = awarded;
+    const awardDay = awarded ? aw.pub_date : null;
+    const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
+    const groups = retro ? [["บันทึกหลังประกาศผล", ["bid", "no_bid"]]] : GROUPS;
+    const form = isDV && locked && !retro ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">โครงการนี้ถูกยกเลิกแล้ว จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
+      : isDV ? `<div class="card" id="form"><h2>${retro ? "บันทึกย้อนหลัง" : "อัปเดตสถานะ"}</h2>
+        ${retro ? '<div class="small muted">ประกาศผู้ชนะแล้ว ถ้ายื่นราคาไปแล้วหรือตัดสินใจไม่ยื่นแต่ยังไม่ได้กด บันทึกได้ที่นี่ (ผลจะเปลี่ยนจาก “บริษัทอื่นชนะ” เป็น “แพ้” เมื่อบันทึกว่ายื่นแล้ว)</div>' : ""}
+        ${groups.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="chips">${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}</div></div>`).join("")}
         <div class="group" id="reasons" ${current.status === "no_bid" ? "" : "hidden"}><span>เหตุผลที่ไม่ยื่น (เลือกได้หลายข้อ)</span>
           <div class="chips">${REASONS.map(r => `<button class="chip reason" type="button" aria-pressed="${current.reasons.has(r)}">${r}</button>`).join("")}</div></div>
         <label class="fld" id="pricebox" ${current.status === "bid" ? "" : "hidden"}>ราคาที่ยื่น (บาท) ไม่บังคับ<input class="txt" id="price" inputmode="decimal" placeholder="เช่น 1,180,000"></label>
@@ -968,7 +976,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       </div>
       <div class="two">
         <div style="display:grid;gap:14px">${form}
-          <div class="card"><h2>ประวัติ</h2><div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}</div>
+          <div class="card"><h2>ประวัติ</h2><div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}${afterResult(e) ? ' · <span class="pill">บันทึกหลังประกาศผล</span>' : ""}</div>
             <div>${esc(STATUS[e.status] || e.status)}${e.reasons && e.reasons.length ? " · " + esc(e.reasons.join(", ")) : ""}${e.bid_price !== null && e.bid_price !== undefined ? " · " + baht(e.bid_price) : ""}</div>
             ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
         </div>
@@ -981,7 +989,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
               ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("")}</div></div>
         </div>
       </div>`;
-    if (!isDV || locked) return;
+    if (!isDV || (locked && !retro)) return;
     const f = document.getElementById("form");
     f.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
       current.status = b.dataset.s;
