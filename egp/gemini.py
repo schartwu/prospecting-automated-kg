@@ -9,19 +9,23 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 
 # Daily request budget per model, kept just under the free-tier quota (requests per day, reset at
 # midnight Pacific) so we never hit the hard limit. Usage is counted in Supabase (ai_usage / ai_take).
+# Checked against AI Studio's rate-limit page on 2 Nov 2026: Flash models 20 a day each (3 Flash is
+# served as gemini-3-flash-preview), 3.1 and 3.5 Flash-Lite 500, 2.5 Flash-Lite only 20.
 BUDGETS = {
     "gemini-3.8-flash": 19,
     "gemini-3.6-flash": 19,
+    "gemini-3-flash-preview": 19,
     "gemini-2.5-flash": 19,
     "gemini-3.1-flash-lite": 450,
-    "gemini-2.5-flash-lite": 450,
+    "gemini-3.5-flash-lite": 450,
+    "gemini-2.5-flash-lite": 19,
 }
 # Judgement calls (classification) prefer the stronger Flash models; plain field extraction from
 # documents is easy, so it goes to the high-quota Flash-Lite models first.
-FLASH_FIRST = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash",
-               "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"]
-LITE_FIRST = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite",
-              "gemini-3.6-flash", "gemini-2.5-flash", "gemini-3.8-flash"]
+FLASH_FIRST = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash",
+               "gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite"]
+LITE_FIRST = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite",
+              "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.8-flash"]
 # Requests per Flash model kept back from classification for reading scanned documents (enrich.py reads
 # scans with Flash only). Since local governments were added (29 Oct 2026) classification used all of
 # 3.8/3.6-flash every evening and scanned reference prices (15) waited until they dropped out.
