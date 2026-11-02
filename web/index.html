@@ -304,8 +304,12 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // วิธีจัดหา: a short badge, and three groups for the filters (plans carry no method: อื่น ๆ)
   const methodShort = m => !m ? "" : /e-bidding/i.test(m) ? "e-bidding" : /e-market/i.test(m) ? "e-market"
     : /เฉพาะเจาะจง/.test(m) ? "เฉพาะเจาะจง" : /คัดเลือก/.test(m) ? "คัดเลือก" : /สอบราคา/.test(m) ? "สอบราคา" : m;
-  const methodGroup = m => !m ? "other" : /e-bidding/i.test(m) ? "ebid" : /e-market/i.test(m) ? "emarket" : /เฉพาะเจาะจง/.test(m) ? "specific" : "other";
-  const METHOD_FILTERS = [["all", "ทุกวิธี"], ["ebid", "e-bidding"], ["emarket", "e-market"], ["specific", "เฉพาะเจาะจง"], ["other", "อื่น ๆ"]];
+  const methodGroup = m => !m ? "other" : /e-bidding/i.test(m) ? "ebid" : /e-market/i.test(m) ? "emarket" : "other";
+  const METHOD_FILTERS = [["all", "ทุกวิธี"], ["ebid", "e-bidding"], ["emarket", "e-market"], ["other", "อื่น ๆ"]];
+  // KG Lead shows competitive work and what came from a Lead (decided 2 Nov 2026). A เฉพาะเจาะจง award is
+  // never announced in advance, so one with no Lead before it stays in the database but not on these pages.
+  const isSpecific = m => /เฉพาะเจาะจง/.test(m || "");
+  const inScope = o => !!(o.lead_types && o.lead_types.length) || !isSpecific(o.method);
   const inMethod = (k, r) => k === "all" || methodGroup(r.method) === k;
   const methodPill = m => m ? `<span class="pill" title="${esc(m)}">${esc(methodShort(m))}</span>` : "";
   // W2 changed the winner, W1 withdrew it (back to waiting for the result)
@@ -460,7 +464,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const { from, to } = per(), key = `${from}|${to}`;
     if (!state.cache[key]) {
       const [l, o] = await Promise.all([api("leads", { from, to }), api("outcomes", { from, to })]);
-      state.cache[key] = { leads: groupLeads(l.rows || []), outcomes: o.rows || [] };
+      state.cache[key] = { leads: groupLeads(l.rows || []), outcomes: (o.rows || []).filter(inScope) };
     }
     ({ leads: state.leads, outcomes: state.outcomes } = state.cache[key]);
   }
@@ -578,10 +582,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const leads = state.leads.filter(areaOk).filter(r => inBand(O.score, r)).filter(r => inMethod(O.method, r));
     const outs = state.outcomes.filter(o => o.kind === "result").filter(o => inBand(O.score, o)).filter(o => inMethod(O.method, o));
     const moved = r => !!r.status || bidDone(r);
-    const wins = outs.filter(o => o.ours && areaOk(o));
-    // The big number follows the Lead funnel; wins with no Lead before them (mostly เฉพาะเจาะจง, which is
-    // never announced in advance) go on a second line so 40 wins do not read as 40 converted Leads.
-    const leadWins = wins.filter(o => o.lead_types), otherWins = wins.filter(o => !o.lead_types);
+    // wins announced in the period that came from a Lead (the tile opens the same list in ผลลัพธ์)
+    const leadWins = outs.filter(o => o.ours && o.lead_types && areaOk(o));
     const plans = leads.filter(r => r.type === "P0"), announced = leads.filter(r => r.type !== "P0");
     // every count leaves the plans out (they have their own box under the table by type)
     const noStatus = announced.filter(r => leadState(r) === "none");
@@ -608,7 +610,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <a class="kpi" href="${href({ v: "leads", type: "np", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", type: "np", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "leads", type: "np", status: "bid", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยื่นราคาแล้ว (ไม่รวมแผน)</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))} · รวมที่มีผลแล้ว</span></a>
-        <a class="kpi win" href="${href({ v: "results", sync: "overview", score: O.score, method: O.method, open: "leadwins" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">ประกาศผลในช่วงนี้ · มูลค่า ${short(sum(leadWins, "winner_price"))}</span><span class="sub">+ งานที่ไม่ผ่าน Lead ${otherWins.length.toLocaleString("th-TH")} งาน · ${short(sum(otherWins, "winner_price"))}${otherWins.length && otherWins.every(o => o.method === "เฉพาะเจาะจง") ? " (เฉพาะเจาะจง)" : " (ส่วนใหญ่เฉพาะเจาะจง)"}</span></a>
+        <a class="kpi win" href="${href({ v: "results", sync: "overview", score: O.score, method: O.method, open: "leadwins" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">ประกาศผลในช่วงนี้ · มูลค่า ${short(sum(leadWins, "winner_price"))}</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
@@ -797,7 +799,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
     // What each tile opens. The open list sits right under the tiles.
     const DETAIL = {
-      wins: ["🏆 OfficeMate ชนะ", "รวมงานที่ไม่ได้มาจาก Lead (เช่น เฉพาะเจาะจง)", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"],
+      wins: ["🏆 OfficeMate ชนะ", "งานแข่งขันทั้งหมดที่เราชนะ รวมที่ไม่ได้มาจาก Lead · ไม่รวมเฉพาะเจาะจงที่ไม่เคยเป็น Lead", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"],
         wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
           <td>${o.lead_types ? esc(o.lead_types.map(t => TYPE[t] || t).join(", ")) : '<span class="muted">ไม่มี</span>'}</td></tr>`))],
       // opened from ภาพรวม's "OfficeMate ชนะ (จาก Lead)" tile
@@ -837,13 +839,13 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       </div>
       ${open ? `<div class="card detail" id="detail"><div class="section-head"><h2>${open[0]}</h2><span class="small muted">${open[1]}</span></div>${open[2]()}</div>` : ""}
       <div class="grid2">
-        <div class="card"><div class="section-head"><h2>🏆 OfficeMate ชนะ</h2><span class="small muted">รวมงานที่ไม่ได้มาจาก Lead</span></div>
+        <div class="card"><div class="section-head"><h2>🏆 OfficeMate ชนะ</h2><span class="small muted">งานแข่งขัน และงานที่เคยเป็น Lead</span></div>
           ${table(["โครงการ", "ราคาที่ชนะ"], wins.slice(0, 8).map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")}</div></td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
           ${wins.length > 8 ? `<div><button class="btn sm" type="button" data-detail="wins">ดูทั้งหมด ${wins.length} รายการ</button></div>` : ""}</div>
         <div class="card"><div class="section-head"><h2>คู่แข่งที่ชนะบ่อย</h2><span class="small muted">กดชื่อเพื่อดูโครงการที่ชนะ</span></div>
           ${top.length ? table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม"], [rivalRows.join("")]) : '<div class="small muted">ไม่มีรายการในช่วงนี้</div>'}</div>
       </div>
-      <div class="card"><div class="section-head"><h2>ประกาศผู้ชนะทั้งหมด</h2><span class="small muted">${all.length.toLocaleString("th-TH")} รายการ · หมวดสินค้าของเรา</span></div>
+      <div class="card"><div class="section-head"><h2>ประกาศผู้ชนะทั้งหมด</h2><span class="small muted">${all.length.toLocaleString("th-TH")} รายการ · หมวดสินค้าของเรา · ไม่รวมเฉพาะเจาะจงที่ไม่เคยเป็น Lead</span></div>
         <div class="toolrow"><input class="txt" id="rq" type="search" placeholder="ค้นหาโครงการ หน่วยงาน ผู้ชนะ" value="${esc(R.q)}" aria-label="ค้นหาผลผู้ชนะ">
           <button class="btn" type="button" id="dl">⬇ Excel</button></div>
         ${table(["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ"], all.slice(0, R.shown).map(o => `<tr><td>${proj(o)}<div class="small muted">ประกาศ ${esc(thDate(o.pub_date))}</div></td><td>${where(o)}</td>
@@ -874,7 +876,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
         <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
         <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
-        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
+        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด ของงานแข่งขัน (e-bidding, e-market, คัดเลือก ฯลฯ) และงานที่เคยเป็น Lead ไม่รวมงานเฉพาะเจาะจงที่ไม่เคยเป็น Lead กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
         <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานใกล้ปิดรับซอง Lead งบสูงสุด ความคืบหน้า และ Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · เริ่มต้น: เดือนนี้</dd></dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
@@ -891,8 +893,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       <div class="gcol"><div class="card legend"><h2>วิธีจัดหา</h2><dl>
         <dt>e-bidding</dt><dd>ประกวดราคาอิเล็กทรอนิกส์ ยื่นเอกสารและราคาในระบบ e-GP ภายในวันยื่นซอง (วงเงินเกิน 5 แสนบาท)</dd>
         <dt>e-market</dt><dd>สินค้าทั่วไปที่มีสเปกในแคตตาล็อก e-GP ยื่นราคาในระบบ e-GP</dd>
-        <dt>เฉพาะเจาะจง</dt><dd>หน่วยงานเชิญผู้ขายเอง ส่วนใหญ่ไม่เกิน 5 แสนบาท ไม่มีประกาศเชิญชวน จึงแทบไม่เป็น Lead แต่ขึ้นในผลลัพธ์เมื่อประกาศผู้ชนะ</dd>
-        <dt>อื่น ๆ</dt><dd>คัดเลือก สอบราคา และแผนจัดซื้อ (e-GP ไม่บอกวิธีจัดหาของแผน)</dd></dl></div>
+        <dt>เฉพาะเจาะจง</dt><dd>หน่วยงานเชิญผู้ขายเอง ส่วนใหญ่ไม่เกิน 5 แสนบาท ไม่มีประกาศล่วงหน้าให้ยื่น จึงไม่แสดงใน KG Lead ยกเว้นงานที่เคยเป็น Lead (มีร่าง TOR / ราคากลาง / ประกาศเชิญชวนก่อน) ข้อมูลยังเก็บไว้ในระบบ</dd>
+        <dt>อื่น ๆ</dt><dd>คัดเลือก สอบราคา เฉพาะเจาะจงที่เคยเป็น Lead และแผนจัดซื้อ (e-GP ไม่บอกวิธีจัดหาของแผน)</dd></dl></div>
       <div class="card legend"><h2>ผลและป้าย</h2><dl>
         <dt>${resultPill("win")}</dt><dd>ประกาศผู้ชนะเป็น บริษัท ออฟฟิศเมท (ไทย) จำกัด</dd>
         <dt>${resultPill("lost")}</dt><dd>มีคนกด “ยื่นราคาแล้ว” แต่บริษัทอื่นชนะ</dd>
@@ -1023,11 +1025,12 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const lead = p.get("lead");
     const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
     if (p.get("status")) state.l.status = p.get("status");
-    if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; state.l.method = p.get("method") || "all"; }
+    const methodKey = k => METHOD_FILTERS.some(f => f[0] === k) ? k : "all";
+    if (p.get("type")) { state.l.type = p.get("type"); state.l.score = p.get("score") || "all"; state.l.method = methodKey(p.get("method")); }
     if (p.get("sort")) state.l.sort = p.get("sort");
     // ผลลัพธ์ opened from a ภาพรวม tile: same score / method, and the tile's list open
     if (view === "results" && ["score", "method", "open"].some(k => p.has(k))) {
-      Object.assign(state.r, { score: p.get("score") || "all", method: p.get("method") || "all", open: p.get("open") || null, shown: 100 });
+      Object.assign(state.r, { score: p.get("score") || "all", method: methodKey(p.get("method")), open: p.get("open") || null, shown: 100 });
     }
     if (lead) { renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from")); }
     currentView = view;
