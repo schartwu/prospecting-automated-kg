@@ -18,7 +18,8 @@ THAI_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")
 MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
           "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
 MONEY = r"(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+\.\d{2})\s*บาท"
-MAX_DOWNLOAD = 15 * 1024 * 1024
+# B0 drafts come as one ZIP with the TOR attachments; 5 relevant ones were over the old 15 MB cap (Nov 2026).
+MAX_DOWNLOAD = 80 * 1024 * 1024
 # The e-GP document server's firewall answers a bare "Mozilla/5.0" with a 244-byte "Request Rejected"
 # page; a complete browser User-Agent gets the document.
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -40,7 +41,7 @@ def fetch_text(url: str) -> tuple[str, dict, list[bytes]]:
     resp.raise_for_status()
     data = resp.raw.read(MAX_DOWNLOAD + 1, decode_content=True)
     if len(data) > MAX_DOWNLOAD:
-        raise ValueError("document larger than 15 MB")
+        raise ValueError(f"document larger than {MAX_DOWNLOAD // 1024 // 1024} MB")
     info = {"content_type": resp.headers.get("Content-Type", ""), "bytes": len(data)}
     if data[:4] == b"%PDF":
         return _pdf_text(data), {**info, "kind": "pdf"}, [data]
