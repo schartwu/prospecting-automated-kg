@@ -568,6 +568,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const bidDone = r => r.status === "bid" || r.result === "lost" || r.result === "win";
     const moved = r => !!r.status || bidDone(r);
     const wins = outs.filter(o => o.ours && areaOk(o));
+    // The big number follows the Lead funnel; wins with no Lead before them (mostly เฉพาะเจาะจง, which is
+    // never announced in advance) go on a second line so 40 wins do not read as 40 converted Leads.
+    const leadWins = wins.filter(o => o.lead_types), otherWins = wins.filter(o => !o.lead_types);
     const plans = leads.filter(r => r.type === "P0"), announced = leads.filter(r => r.type !== "P0");
     // every count leaves the plans out (they have their own box under the table by type)
     const noStatus = announced.filter(r => leadState(r) === "none");
@@ -594,7 +597,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <a class="kpi" href="${href({ v: "leads", type: "np", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
         <a class="kpi alert" href="${href({ v: "leads", type: "np", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
         <a class="kpi" href="${href({ v: "tracking" })}"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))}</span></a>
-        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (ทุกงาน)</span><span class="value">${wins.length}</span><span class="sub">มูลค่า ${short(sum(wins, "winner_price"))} · รวมเฉพาะเจาะจง</span></a>
+        <a class="kpi win" href="${href({ v: "results" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">มูลค่า ${short(sum(leadWins, "winner_price"))}</span><span class="sub">+ งานที่ไม่ผ่าน Lead ${otherWins.length.toLocaleString("th-TH")} งาน · ${short(sum(otherWins, "winner_price"))}${otherWins.length && otherWins.every(o => o.method === "เฉพาะเจาะจง") ? " (เฉพาะเจาะจง)" : " (ส่วนใหญ่เฉพาะเจาะจง)"}</span></a>
       </div>
       <div class="ov">
         <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
