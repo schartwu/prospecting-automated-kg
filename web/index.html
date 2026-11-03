@@ -128,7 +128,7 @@ a.kpi:hover { border-color: var(--accent); }
 tr.warn td { background: var(--bad-soft); }
 tr.total td { font-weight: 500; border-top: 2px solid var(--line); }
 .tbl.split table { table-layout: fixed; width: 100%; }
-.tbl.plans { margin-top: 10px; }
+.tbl.plans { margin-bottom: 10px; }
 .who-by { font-weight: 500; color: var(--ink); }
 button.kpi { font: inherit; text-align: left; cursor: pointer; }
 button.kpi:hover { border-color: var(--accent); }
@@ -262,11 +262,16 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     mer_replied: "💬 Mer ตอบแล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ" };
   const GROUPS = [["กำลังทำ", ["received", "contacted", "sent_to_mer", "mer_replied"]], ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
   const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
-  const TYPE = { D0: "ประกาศเชิญชวน", B0: "ร่าง TOR", "15": "ราคากลาง", P0: "แผนจัดซื้อ", W0: "ประกาศผู้ชนะ", D1: "ยกเลิกประกาศ",
-    D2: "แก้ไขประกาศเชิญชวน", W1: "ยกเลิกประกาศผู้ชนะ", W2: "เปลี่ยนแปลงผู้ชนะ" };
+  // The order e-GP publishes them: plan, draft TOR, reference price, invitation, then changes and results.
+  // An array, because objects list the numeric key "15" first.
+  const TYPE_ORDER = ["P0", "B0", "15", "D0", "D2", "D1", "W0", "W2", "W1"];
+  const TYPE = { P0: "แผนจัดซื้อ", B0: "ร่าง TOR", "15": "ราคากลาง", D0: "ประกาศเชิญชวน", D2: "แก้ไขประกาศเชิญชวน",
+    D1: "ยกเลิกประกาศ", W0: "ประกาศผู้ชนะ", W2: "เปลี่ยนแปลงผู้ชนะ", W1: "ยกเลิกประกาศผู้ชนะ" };
   const TYPE_MEANING = {
-    D0: "เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง", B0: "ร่างเอกสาร ประกาศจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
-    "15": "บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน", P0: "แผนประจำปี รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน",
+    P0: "แผนประจำปี รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน", B0: "ร่างเอกสาร ประกาศจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
+    "15": "บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน", D0: "เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง",
+    D2: "หน่วยงานแก้ไขประกาศเชิญชวน เช่น เลื่อนวันยื่นซอง (ดึงทุกวันศุกร์)",
+    D1: "หน่วยงานยกเลิกโครงการ ปิดการอัปเดตสถานะ",
     W0: "ใครชนะ ราคาเท่าไร ใช้ดูคู่แข่ง", W2: "หน่วยงานเปลี่ยนผู้ชนะ ระบบใช้ผู้ชนะใหม่แทน (ดึงทุกวันศุกร์)",
     W1: "หน่วยงานยกเลิกผู้ชนะ โครงการกลับไปรอผล อัปเดตสถานะได้อีกครั้ง (ดึงทุกวันศุกร์)" };
   const STATUS_MEANING = {
@@ -602,7 +607,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
-    const byType = ["D0", "15", "B0"].map(t => [t, leads.filter(r => r.type === t)]);
+    const byType = ["B0", "15", "D0"].map(t => [t, leads.filter(r => r.type === t)]);
     const letGo = leads.filter(r => leadState(r) === "missed");
     const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
       ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
@@ -624,20 +629,20 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <a class="kpi win" href="${href({ v: "results", sync: "overview", score: O.score, method: O.method, open: "leadwins" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">ประกาศผลในช่วงนี้ · มูลค่า ${short(sum(leadWins, "winner_price"))}</span></a>
       </div>
       <div class="ov">
-        <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
-          <div>${soon.slice(0, 8).map(mini).join("") || '<div class="empty">ไม่มีประกาศเชิญชวนที่ปิดรับซองใน 7 วัน</div>'}</div></div>
+        <div class="card"><div class="section-head"><h2>Lead แยกตามประเภท</h2><span class="small muted">1 โครงการนับครั้งเดียว ตามประกาศล่าสุด</span></div>
+          <div class="tbl split plans"><table>${COLS}<thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
+          </tbody></table></div>
+          <div class="tbl split"><table>${COLS}<tbody>
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (รวมที่เลยวันยื่นซองแล้ว)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>${t === "D0" ? MISSED_ROW : ""}`).join("")}
+          <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
+          </tbody></table></div></div>
         <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", type: "all", status: "all", sort: "budget", sync: "overview", score: O.score, method: O.method })}">ดูทั้งหมด →</a></div>
           <div>${top.map(mini).join("") || '<div class="empty">ไม่มี Lead ที่ระบุงบ</div>'}</div></div>
         <div class="stack">
         <div class="card"><h2>ความคืบหน้าของ Lead ในช่วงนี้</h2><div class="small muted">ไม่รวมแผนจัดซื้อ</div>
           <div class="funnel">${funnel.map(([l, n], i) => `<div class="fbar"><span>${l}</span><div class="track"><div class="fill ${i === 4 ? "win" : ""}" style="width:${Math.round(n / max * 100)}%"></div></div><span class="n">${n}</span></div>`).join("")}</div></div>
-        <div class="card"><div class="section-head"><h2>Lead แยกตามประเภท</h2><span class="small muted">1 โครงการนับครั้งเดียว ตามประกาศล่าสุด</span></div>
-          <div class="tbl split"><table>${COLS}<thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody>
-          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (รวมที่เลยวันยื่นซองแล้ว)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>${t === "D0" ? MISSED_ROW : ""}`).join("")}
-          <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
-          </tbody></table></div>
-          <div class="tbl split plans"><table>${COLS}<tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
-          </tbody></table></div></div>
+        <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
+          <div>${soon.slice(0, 8).map(mini).join("") || '<div class="empty">ไม่มีประกาศเชิญชวนที่ปิดรับซองใน 7 วัน</div>'}</div></div>
         </div>
       </div>`;
     body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { O.score = b.dataset.score; overview(body); });
@@ -645,7 +650,6 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   // ---------------- Lead ----------------
-  // latest stage first, the order things happen read backwards (as in ภาพรวม)
   // the score bands of the email footer and the คู่มือ tab
   const SCORE_BANDS = [["90", "100–90"], ["75", "89–75"], ["60", "74–60"], ["50", "59–50"]];
   const band = s => s == null || s < 50 ? null : s >= 90 ? "90" : s >= 75 ? "75" : s >= 60 ? "60" : "50";
@@ -656,7 +660,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const SCORE_FILTERS = [["all", "ทุกช่วงคะแนน"], ...SCORE_BANDS];
   const methodChips = (k0, rows) => frow("วิธีจัดหา", METHOD_FILTERS.map(([k, l]) =>
     `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
-  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"],
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["P0", "แผนจัดซื้อ"], ["B0", "ร่าง TOR"], ["15", "ราคากลาง"], ["D0", "ประกาศเชิญชวน"],
     ["np", "ทั้งหมด ยกเว้นแผนจัดซื้อ"]];
   // "ยื่นแล้ว" keeps the bids whose result is out (they also count under "ประกาศผู้ชนะแล้ว"), so it shows the
   // same projects as ภาพรวม's "ยื่นราคาแล้ว" tile; the other states are one per lead.
@@ -888,14 +892,16 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
         <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
         <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด ของงานแข่งขัน (e-bidding, e-market, คัดเลือก ฯลฯ) และงานที่เคยเป็น Lead ไม่รวมงานเฉพาะเจาะจงที่ไม่เคยเป็น Lead กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
-        <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead งบรวม งานใกล้ปิดรับซอง Lead งบสูงสุด ความคืบหน้า และ Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · เริ่มต้น: เดือนนี้</dd></dl>
+        <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead และงบรวม · Lead แยกตามประเภท (เรียงตามลำดับที่รัฐประกาศ แผน → ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) รวม Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · Lead งบสูงสุด · ความคืบหน้า · งานใกล้ปิดรับซอง · เริ่มต้น: เดือนนี้</dd></dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
         <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
         <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd>
         <dt>ปุ่มช่วงเวลา</dt><dd>ฉบับล่าสุด = อีเมลเช้าล่าสุด · 7 วัน = 7 วันล่าสุดรวมวันนี้ · เดือนนี้ = วันที่ 1 ถึงวันนี้ · ${fyLabel()} = ปีงบประมาณราชการ 1 ต.ค. ถึงวันนี้ (ปีงบสิ้นสุด 30 ก.ย. ปุ่มเปลี่ยนเป็นปีถัดไปเองทุก 1 ต.ค.) · ช่วงอื่น เช่น เดือนที่แล้ว ไตรมาส หรือปีงบก่อน ใช้ “กำหนดเอง”</dd>
-        <dt>🔗 จับคู่กับแผน</dt><dd>แผนจัดซื้อที่ต่อมาประกาศจริง (หน่วยงานเดียวกัน งบเท่ากันพอดี ประกาศหลังแผน และจับคู่ได้คู่เดียว) รวมเป็นโครงการเดียว สถานะที่กดไว้ตอนเป็นแผนย้ายตามมาด้วย</dd></dl></div>
-      <div class="card legend"><h2>ประเภทประกาศ</h2><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
+        <dt>🔗 จับคู่กับแผน</dt><dd>แผนจัดซื้อที่ต่อมาประกาศจริง (หน่วยงานเดียวกัน งบเท่ากันพอดี ประกาศหลังแผน และจับคู่ได้คู่เดียว) รวมเป็นโครงการเดียว สถานะที่กดไว้ตอนเป็นแผนย้ายตามมาด้วย</dd>
+        <dt>งบประมาณ</dt><dd>ราคากลางจากประกาศขั้นล่าสุดของโครงการที่ระบุงบ (ประกาศเชิญชวน ถ้าไม่มีใช้ราคากลาง → ร่าง TOR → แผน) ใช้ตัวเลขเดียวกันทุกหน้าและในอีเมลเช้า</dd>
+        <dt>ประกาศล่าสุด</dt><dd>โครงการที่มีหลายประกาศนับครั้งเดียวที่ขั้นที่ไปถึงล่าสุด เช่น มีแผน ร่าง TOR และประกาศเชิญชวน นับเป็นประกาศเชิญชวน</dd></dl></div>
+      <div class="card legend"><h2>ประเภทประกาศ</h2><div class="small muted">เรียงตามลำดับที่หน่วยงานประกาศใน e-GP โครงการหนึ่งอาจไม่มีครบทุกขั้น</div><dl>${TYPE_ORDER.map(k => `<dt>${TYPE[k]} (${k})</dt><dd>${TYPE_MEANING[k]}</dd>`).join("")}</dl>
         <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 100–90</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
         <dt>${scoreBadge(75)} 89–75</dt><dd>ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
         <dt>${scoreBadge(60)} 74–60</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
