@@ -63,6 +63,7 @@ class Gemini:
             except _ModelUnavailable as e:
                 self.skip.add(model)
                 errors.append(str(e))
+                print(f"  gemini: stop using {e}", flush=True)
             except RuntimeError as e:
                 errors.append(str(e))
         if all(m in self.skip for m in models):
@@ -90,10 +91,15 @@ class Gemini:
                                      headers={"x-goog-api-key": self.api_key})
                 time.sleep(SECONDS_BETWEEN_CALLS)
                 if resp.status_code == 429 and "PerDay" in resp.text:
-                    raise _ModelUnavailable(f"{model}: Google daily quota used up")
+                    raise _ModelUnavailable(f"{model}: Google daily quota used up ({resp.text[:300]})")
                 if resp.status_code == 404:
-                    raise _ModelUnavailable(f"{model}: not available for this key")
-                if resp.status_code in (429, 500, 503):
+                    raise _ModelUnavailable(f"{model}: not available for this key ({resp.text[:300]})")
+                if resp.status_code in (500, 503):
+                    # "model is currently experiencing high demand": the next model now, not a retry here.
+                    # On 2 Nov 2026 retrying spent the Flash requests kept for scans on 503s (each call
+                    # counts) and no scan was read.
+                    raise RuntimeError(f"{model} busy: HTTP {resp.status_code}")
+                if resp.status_code == 429:
                     last = f"HTTP {resp.status_code}: {resp.text[:200]}"
                     time.sleep(30)
                     continue

@@ -3,7 +3,8 @@
 Modes:
   daily   - nationwide + every active department (Supabase `departments`) x DAILY_TYPES.
             --shard k --shards n splits the departments so n machines (each with its own IP)
-            can share the work; the server answers HTTP 429 above ~2 parallel requests per IP.
+            can share the work; the server answers HTTP 429 above ~2 parallel requests per IP and
+            above ~40 a minute, so egp/feed.py paces each machine at 20 a minute.
   capped  - only the (department, type) feeds that hit the 20-item cap in the last 7 days
             (Supabase `capped_feeds`), re-read during the afternoon so busy departments lose less.
   sweep   - deptId codes not known yet, with W0 (the most frequent type, ~1,300 a week), to discover

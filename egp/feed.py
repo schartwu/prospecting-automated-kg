@@ -2,6 +2,7 @@
 
 Feed limits (manual section 4): XML only, at most the 20 latest items, current day only.
 """
+import threading
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -41,6 +42,33 @@ METHODS = {
 _session = requests.Session()
 _session.headers["User-Agent"] = "Mozilla/5.0 (prospecting-automated-kg)"
 
+# The server limits requests per IP: on 2 Nov 2026 every collect shard got ~238 answers in its first 5-6
+# minutes (~40 a minute) and then only HTTP 429; shards that kept sending stayed blocked for 2+ hours,
+# while ~24 a minute in the retry phase went through. So every request of this process waits its turn
+# (one start per SECONDS_BETWEEN_REQUESTS, all threads together), and a 429 pauses them all.
+SECONDS_BETWEEN_REQUESTS = 3.0  # 20 a minute
+PAUSE_AFTER_429 = 600
+_lock = threading.Lock()
+_next_start = 0.0
+
+
+def _wait_turn():
+    global _next_start
+    with _lock:
+        now = time.monotonic()
+        start = max(now, _next_start)
+        _next_start = start + SECONDS_BETWEEN_REQUESTS
+    time.sleep(start - now)
+
+
+def _pause_all():
+    """Push every later request of this process at least PAUSE_AFTER_429 seconds out."""
+    global _next_start
+    with _lock:
+        if _next_start < time.monotonic() + PAUSE_AFTER_429:
+            _next_start = time.monotonic() + PAUSE_AFTER_429
+            print(f"  HTTP 429: pausing all requests for {PAUSE_AFTER_429 // 60} min", flush=True)
+
 
 @dataclass
 class FeedResult:
@@ -74,6 +102,7 @@ def _parse(raw: bytes) -> tuple[dict, list]:
 def _get(params: dict, max_seconds: float) -> requests.Response:
     """GET with a wall-clock cap. A normal read timeout is not enough: the server sometimes
     trickles bytes slowly, which keeps resetting the read timeout and hangs the request."""
+    _wait_turn()
     started = time.monotonic()
     with _session.get(BASE_URL, params=params, timeout=(10, 30), stream=True) as resp:
         body = bytearray()
@@ -92,9 +121,9 @@ def fetch(params: dict, max_seconds: float = 60, retries: int = 2) -> FeedResult
         try:
             resp = _get(params, max_seconds)
             if resp.status_code == 429:
-                # Rate limited: back off much longer than for other errors.
+                # Rate limited: every request of this process waits (_pause_all), a retry included.
                 last_error = "HTTP 429"
-                time.sleep(30 * (attempt + 1))
+                _pause_all()
                 continue
             if resp.status_code != 200:
                 last_error = f"HTTP {resp.status_code}"
