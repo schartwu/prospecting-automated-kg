@@ -931,7 +931,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   }
 
   function leadSummary(anns) {
-    const order = ["D0", "B0", "15", "P0"];
+    const order = ["D0", "15", "B0", "P0"];
     const main0 = [...anns].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)).find(a => order.includes(a.type)) || anns[0];
     return { main: main0, budget: latestBudget(anns), d0: anns.find(a => a.type === "D0" && a.bid_date),
       // latest winner announcement: W0, W2 (changed) or W1 (withdrawn), by e-GP's seqNo (as project_award)
@@ -957,7 +957,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     // After the winner is announced only "ยื่นราคาแล้ว" / "ไม่ยื่น" can still be recorded, for a Sale who bid
     // (or decided not to) and forgot to press it: a recorded bid turns "บริษัทอื่นชนะ" into "แพ้" and counts
     // in ยื่นราคาแล้ว. Steps before the result (รับเรื่อง, ส่งให้ Mer …) stay closed. A cancelled project stays closed.
-    const retro = awarded;
+    const retro = awarded && !anns.some(a => a.type === "D1");
     const awardDay = awarded ? aw.pub_date : null;
     const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
     const groups = retro ? [["บันทึกหลังประกาศผล", ["bid", "no_bid"]]] : GROUPS;

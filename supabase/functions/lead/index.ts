@@ -139,6 +139,21 @@ Deno.serve(async (req) => {
       if (status === "no_bid" && !reasons.length) return reply({ error: "เลือกเหตุผลที่ไม่ยื่นอย่างน้อย 1 ข้อ" }, 400);
       if (status === "other" && !note) return reply({ error: "สถานะ “อื่น ๆ” ต้องใส่หมายเหตุ" }, 400);
       if (price !== null && !(price >= 0)) return reply({ error: "ราคาที่ยื่นต้องเป็นตัวเลข" }, 400);
+      // The same locks as the web page, so an old tab or a hand-made request cannot save past them.
+      const { data: lead, error: leadError } = await db.rpc("lead_detail", { p_key: key });
+      if (leadError) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
+      const anns: { type: string; project_no: string | null }[] = lead?.announcements ?? [];
+      if (!anns.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
+      const project = String(lead.lead_key ?? "");
+      if (!project.startsWith("P:")) {
+        if (anns.some((a) => a.type === "D1" && a.project_no === project)) {
+          return reply({ error: "โครงการนี้ถูกยกเลิกแล้ว บันทึกสถานะไม่ได้" }, 409);
+        }
+        const { data: award } = await db.rpc("project_award", { p_project: project });
+        if (award?.[0]?.awarded && !["bid", "no_bid"].includes(status)) {
+          return reply({ error: "ประกาศผู้ชนะแล้ว บันทึกได้แค่ “ยื่นราคาแล้ว” หรือ “ไม่ยื่น”" }, 409);
+        }
+      }
       const { error } = await db.from("lead_events").insert({
         lead_key: key, status, reasons: status === "no_bid" ? reasons : [],
         bid_price: status === "bid" ? price : null, note: note || null, user_id: user.id,
