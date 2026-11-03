@@ -452,15 +452,20 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const inTarget = r => !r.province || state.provinces.includes(r.province);
   const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
   const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
-  const PRESETS = [["last", "ฉบับล่าสุด"], ["7", "7 วัน"], ["30", "30 วัน"], ["month", "เดือนนี้"], ["90", "3 เดือน"], ["all", "12 เดือน"], ["custom", "กำหนดเอง"]];
+  // The government fiscal year runs 1 Oct – 30 Sep and is named by the Buddhist year it ends in
+  // (1 Oct 2026 – 30 Sep 2027 = ปีงบ 2570). At most 12 months: each extra month adds about 2 MB to every load.
+  const fyStart = iso => (Number(iso.slice(5, 7)) >= 10 ? iso.slice(0, 4) : String(Number(iso.slice(0, 4)) - 1)) + "-10-01";
+  const fyLabel = () => `ปีงบ ${Number(fyStart(todayISO()).slice(0, 4)) + 544}`;
+  // Fewer buttons before roll-out (3 Nov 2026): 30 วัน repeated เดือนนี้, 3 เดือน was rarely needed (กำหนดเอง),
+  // 12 เดือน became the fiscal year.
+  const PRESETS = [["last", "ฉบับล่าสุด"], ["7", "7 วัน"], ["month", "เดือนนี้"], ["fy", fyLabel()], ["custom", "กำหนดเอง"]];
 
   function applyPreset(p, target = per()) {
     target.preset = p;
     const end = todayISO(), last = state.days[state.days.length - 1] || end;
     if (p === "last") { target.from = target.to = last; }
     else if (p === "month") { target.from = end.slice(0, 8) + "01"; target.to = end; }
-    // "12 เดือน": the longest preset. Each extra month adds about 2 MB to every load (results + leads).
-    else if (p === "all") { target.to = end; const y = addDays(end, -364); target.from = y > FIRST_DAY ? y : FIRST_DAY; }
+    else if (p === "fy") { target.from = fyStart(end); target.to = end; }
     else if (p !== "custom") { target.to = end; target.from = addDays(end, -(Number(p) - 1)); }
   }
 
@@ -888,7 +893,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
         <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
         <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd>
-        <dt>12 เดือน</dt><dd>ช่วงยาวสุดที่เลือกได้ในปุ่ม ถ้าต้องการช่วงอื่นใช้ “กำหนดเอง”</dd>
+        <dt>ปุ่มช่วงเวลา</dt><dd>ฉบับล่าสุด = อีเมลเช้าล่าสุด · 7 วัน = 7 วันล่าสุดรวมวันนี้ · เดือนนี้ = วันที่ 1 ถึงวันนี้ · ${fyLabel()} = ปีงบประมาณราชการ 1 ต.ค. ถึงวันนี้ (ปีงบสิ้นสุด 30 ก.ย. ปุ่มเปลี่ยนเป็นปีถัดไปเองทุก 1 ต.ค.) · ช่วงอื่น เช่น เดือนที่แล้ว ไตรมาส หรือปีงบก่อน ใช้ “กำหนดเอง”</dd>
         <dt>🔗 จับคู่กับแผน</dt><dd>แผนจัดซื้อที่ต่อมาประกาศจริง (หน่วยงานเดียวกัน งบเท่ากันพอดี ประกาศหลังแผน และจับคู่ได้คู่เดียว) รวมเป็นโครงการเดียว สถานะที่กดไว้ตอนเป็นแผนย้ายตามมาด้วย</dd></dl></div>
       <div class="card legend"><h2>ประเภทประกาศ</h2><dl>${Object.entries(TYPE_MEANING).map(([k, v]) => `<dt>${TYPE[k]} (${k})</dt><dd>${v}</dd>`).join("")}</dl>
         <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 100–90</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
