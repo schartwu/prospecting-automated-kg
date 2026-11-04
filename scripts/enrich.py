@@ -33,6 +33,9 @@ from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: 
 
 TYPES = ["D0", "B0", "15", "P0", "W0", "W2"]  # W2: winners changed, read like a W0
 SCAN_MODELS = [m for m in FLASH_FIRST if "lite" not in m]
+# Gemini 3 models think before answering and those tokens count against maxOutputTokens: with 1,024 the
+# JSON of 7 scans came back cut off on 3 Nov 2026 ("Unterminated string"). Quota counts requests, not tokens.
+OUTPUT_TOKENS = 8192
 BACK_OFF_SECONDS = 20  # after a refused or timed-out read
 
 
@@ -60,7 +63,7 @@ def ai_extract(gemini, text, pub, pdfs=()):
     # of the total; 2026-10-15 check against code-read D0 budgets), so scans use only the Flash models and
     # wait for the next run when those are busy. Plain text is easy and goes to Flash-Lite first.
     models = SCAN_MODELS if attachments else LITE_FIRST
-    ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, models, validate=check, max_output=1024,
+    ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, models, validate=check, max_output=OUTPUT_TOKENS,
                              attachments=attachments)
     bid = date.fromisoformat(ans["bid_date"]) if ans.get("bid_date") else None
     return ans.get("budget_thb"), (bid if docs.plausible(bid, pub) else None), ans.get("bid_time"), \
@@ -165,7 +168,7 @@ class Enricher:
         if not winners and len(text) > 200 and self.ai_ok:
             try:
                 ans, model = self.gemini.json(docs.WINNER_PROMPT.format(text=text[:8000]), docs.WINNER_SCHEMA,
-                                              LITE_FIRST, max_output=1024)
+                                              LITE_FIRST, max_output=OUTPUT_TOKENS)
                 winners = [w.strip() for w in ans["winners"] if w and w.strip()]
                 price, source = ans["price_thb"], f"ai:{model}"
             except QuotaExhausted:
