@@ -2,7 +2,8 @@
 D0 / B0 / 15 / P0 announcements, the winner and winning price from W0, and the province from all of them.
 
 - D0 / B0 / 15: code patterns on the PDF text first (free). When they find nothing usable, Gemini
-  (Flash-Lite first) reads the text; scanned PDFs with no text layer are sent to Gemini as files.
+  (Flash-Lite first) reads the text; scanned PDFs with no text layer are sent to Gemini as files (Flash
+  first, Flash-Lite after), unless a later stage of the project already has a budget.
 - P0: the plan page is an HTML table of plan lines (plan no, project, budget, expected month). One page
   covers many plan lines, so it is downloaded once and every relevant line on it gets its row.
 - W0: most are an HTML page the code reads ("ได้แก่ <winner> โดยเสนอราคา ... บาท"); e-bidding results are
@@ -32,7 +33,11 @@ from egp.db import DB  # noqa: E402
 from egp.gemini import FLASH_FIRST, LITE_FIRST, Gemini, QuotaExhausted  # noqa: E402
 
 TYPES = ["D0", "B0", "15", "P0", "W0", "W2"]  # W2: winners changed, read like a W0
-SCAN_MODELS = [m for m in FLASH_FIRST if "lite" not in m]
+# Scans: Flash first, Flash-Lite once every Flash model is busy or used up (4 Nov 2026; before, scans waited
+# for Flash and 503 "high demand" kept them waiting for days). Lite's numbers off images slipped on
+# 2026-10-15 (dropped digits, a line item instead of the total), so its reads are tagged
+# ai:<lite model>:scan, and scans whose number would not show are skipped (later_stage_budget).
+SCAN_MODELS = FLASH_FIRST
 # Gemini 3 models think before answering and those tokens count against maxOutputTokens: with 1,024 the
 # JSON of 7 scans came back cut off on 3 Nov 2026 ("Unterminated string"). Quota counts requests, not tokens.
 OUTPUT_TOKENS = 8192
@@ -59,9 +64,7 @@ def ai_extract(gemini, text, pub, pdfs=()):
     else:
         prompt = docs.EXTRACT_PROMPT.format(text="") + SCAN_PROMPT_NOTE
         attachments = [("application/pdf", b) for b in pdfs[:2]]
-    # Reading numbers off a scanned image is where Flash-Lite slipped (dropped digits, a line item instead
-    # of the total; 2026-10-15 check against code-read D0 budgets), so scans use only the Flash models and
-    # wait for the next run when those are busy. Plain text is easy and goes to Flash-Lite first.
+    # Scans go to Flash first (SCAN_MODELS); plain text is easy and goes to Flash-Lite first.
     models = SCAN_MODELS if attachments else LITE_FIRST
     ans, model = gemini.json(prompt, docs.EXTRACT_SCHEMA, models, validate=check, max_output=OUTPUT_TOKENS,
                              attachments=attachments)
@@ -119,6 +122,13 @@ class Enricher:
             scanned = len(text) <= 200 and bool(pdfs)
             # Only D0 announces the bid date; drafts (B0) and reference prices (15) need just the budget.
             needs_ai = budget is None or (r["announce_type"] == "D0" and bid is None)
+            if (needs_ai and scanned and r["announce_type"] != "D0" and r.get("project_no")
+                    and self.db.rpc("later_stage_budget", {"p_project": r["project_no"], "p_type": r["announce_type"]})):
+                # The project shows the budget of its latest stage, so this scan's number would never show.
+                self.stats["scan skipped: later stage has a budget"] += 1
+                needs_ai, skipped = False, True
+            else:
+                skipped = False
             if needs_ai and self.ai_ok and (len(text) > 200 or scanned):
                 try:
                     a_budget, a_bid, a_time, items, model = ai_extract(self.gemini, text, pub, pdfs if scanned else ())
@@ -128,9 +138,9 @@ class Enricher:
                     source = f"ai:{model}" + (":scan" if scanned else "")
                 except QuotaExhausted as e:
                     if scanned:
-                        # Flash models used up today; read it next run. Logged: these waited silently for
+                        # Every model used up today; read it next run. Logged: these waited silently for
                         # weeks before (scanned 15 of 69109365521, Nov 2026).
-                        self.stats["scan waits: Flash used up"] += 1
+                        self.stats["scan waits: AI used up"] += 1
                         print(f"  scan of {r['announce_type']} {r['link'][-40:]} waits: {str(e)[:200]}", flush=True)
                         return
                     self.ai_ok = False
@@ -146,12 +156,15 @@ class Enricher:
                           extracted={**info, "bid_time": bid_time, "source": source, "text_chars": len(text),
                                      "scanned": scanned, "province": provinces.from_dept(r.get("dept_code")) or provinces.detect(r["title"], text)})
             if budget is None and bid is None:
-                self.stats["missing"] += 1
+                self.stats["missing"] += 0 if skipped else 1
                 detail["error"] = detail["error"] or (
-                    "scanned document, not read" if scanned
+                    "scanned document, not read: a later stage has the budget" if skipped
+                    else "scanned document, not read" if scanned
                     else "no text in document" if len(text) <= 200 else "fields not found")
             else:
                 self.stats["ai" if source.startswith("ai") else "regex"] += 1
+                if source.endswith(":scan"):
+                    self.stats["scan read: lite" if "lite" in source else "scan read: flash"] += 1
         except Exception as e:  # recorded on the row so the digest still shows the announcement
             if transient(e):
                 self.stats["retry later"] += 1

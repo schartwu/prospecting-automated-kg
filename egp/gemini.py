@@ -26,7 +26,7 @@ FLASH_FIRST = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview",
 LITE_FIRST = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite",
               "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-3.8-flash"]
 # Requests per Flash model kept back from classification for reading scanned documents (enrich.py reads
-# scans with Flash only). Since local governments were added (29 Oct 2026) classification used all of
+# scans with Flash first, Flash-Lite after). Since local governments were added (29 Oct 2026) classification used all of
 # 3.8/3.6-flash every evening and scanned reference prices (15) waited until they dropped out.
 SCAN_RESERVE = 6
 SECONDS_BETWEEN_CALLS = 13  # free tier allows 5 requests per minute per model
