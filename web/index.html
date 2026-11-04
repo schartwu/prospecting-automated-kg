@@ -660,7 +660,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const SCORE_FILTERS = [["all", "ทุกช่วงคะแนน"], ...SCORE_BANDS];
   const methodChips = (k0, rows) => frow("วิธีจัดหา", METHOD_FILTERS.map(([k, l]) =>
     `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
-  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["P0", "แผนจัดซื้อ"], ["B0", "ร่าง TOR"], ["15", "ราคากลาง"], ["D0", "ประกาศเชิญชวน"],
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"],
     ["np", "ทั้งหมด ยกเว้นแผนจัดซื้อ"]];
   // "ยื่นแล้ว" keeps the bids whose result is out (they also count under "ประกาศผู้ชนะแล้ว"), so it shows the
   // same projects as ภาพรวม's "ยื่นราคาแล้ว" tile; the other states are one per lead.
