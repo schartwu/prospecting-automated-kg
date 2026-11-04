@@ -122,8 +122,8 @@ class Enricher:
             scanned = len(text) <= 200 and bool(pdfs)
             # Only D0 announces the bid date; drafts (B0) and reference prices (15) need just the budget.
             needs_ai = budget is None or (r["announce_type"] == "D0" and bid is None)
-            if (needs_ai and scanned and r["announce_type"] != "D0" and r.get("project_no")
-                    and self.db.rpc("later_stage_budget", {"p_project": r["project_no"], "p_type": r["announce_type"]})):
+            if (needs_ai and scanned and r["announce_type"] != "D0"
+                    and self.db.rpc("later_stage_budget_of", {"p_id": r["id"]})):
                 # The project shows the budget of its latest stage, so this scan's number would never show.
                 self.stats["scan skipped: later stage has a budget"] += 1
                 needs_ai, skipped = False, True
