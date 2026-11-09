@@ -9,6 +9,7 @@ the collect_runs rows of this evening's daily run and writes to ADMIN_ALERT_EMAI
     29 Oct 2026 and roughly doubled the daily rows).
 A normal evening fails 1-2%. The pipeline goes on either way; the next evening fetches back about a week.
 """
+import argparse
 import os
 import smtplib
 import sys
@@ -43,6 +44,12 @@ def problems(runs, db_mb=0):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--step-failed", metavar="WHAT", help="only email the admin that WHAT failed")
+    args = ap.parse_args()
+    if args.step_failed:
+        step_failed(args.step_failed)
+        return
     db = DB()
     now = datetime.now(ZoneInfo("Asia/Bangkok"))
     since = (now - timedelta(hours=LOOK_BACK_HOURS)).isoformat()
@@ -57,15 +64,8 @@ def main():
         return
     for p in found:
         print(f"::warning::{p}")
-    to = [e.strip() for e in (os.environ.get("ADMIN_ALERT_EMAIL") or "").split(",") if e.strip()]
-    if not to:
-        print("::warning::ADMIN_ALERT_EMAIL is empty; no alert email sent")
-        return
-    msg = EmailMessage()
-    msg["From"] = os.environ["SENDER_EMAIL"]
-    msg["To"] = ", ".join(to)
-    msg["Subject"] = f"⚠️ e-GP Alert {now:%d/%m/%Y}: ดึงข้อมูลรอบเย็นมีปัญหา"
-    msg.set_content(
+    send_alert(
+        f"⚠️ e-GP Alert {now:%d/%m/%Y}: ดึงข้อมูลรอบเย็นมีปัญหา",
         "รอบดึงข้อมูลเย็นนี้ (Daily pipeline) มีปัญหา:\n\n"
         + "\n".join(f"- {p}" for p in found)
         + f"\n\nได้รายการ {items:,} รายการ (ก่อนเพิ่มหน่วยงานท้องถิ่นวันที่ 29 ต.ค. 69 ปกติราว 3,000–4,000)\n\n"
@@ -73,10 +73,37 @@ def main():
           "ไม่ต้องทำอะไรถ้าเป็นแค่คืนเดียว: RSS ย้อนหลังได้ราว 1 สัปดาห์ รอบเย็นถัดไปจะเก็บย้อนให้เอง\n"
           "ถ้าเกิดหลายคืนติดกัน: ดู log ของ job collect ใน GitHub Actions → Daily pipeline "
           "และลองเปิด http://process3.gprocurement.go.th/EPROCRssFeedWeb/egpannouncerss.xml?anounceType=D0\n")
+
+
+def send_alert(subject, body):
+    to = [e.strip() for e in (os.environ.get("ADMIN_ALERT_EMAIL") or "").split(",") if e.strip()]
+    if not to:
+        print("::warning::ADMIN_ALERT_EMAIL is empty; no alert email sent")
+        return
+    msg = EmailMessage()
+    msg["From"] = os.environ["SENDER_EMAIL"]
+    msg["To"] = ", ".join(to)
+    msg["Subject"] = subject
+    msg.set_content(body)
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(os.environ["SENDER_EMAIL"], os.environ["SENDER_PASSWORD"])
         smtp.send_message(msg)
     print(f"alert sent to {len(to)} recipient(s)")
+
+
+def step_failed(what):
+    """Workflows call this with `if: failure()`. On 6-8 Nov 2026 classify.py hit the database's statement
+    timeout three evenings running; collection was fine, so the check above stayed quiet and nobody knew
+    until Monday's email came out empty."""
+    now = datetime.now(ZoneInfo("Asia/Bangkok"))
+    url = (f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}"
+           f"/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}")
+    send_alert(f"⚠️ e-GP Alert {now:%d/%m/%Y %H:%M}: {what} ไม่สำเร็จ",
+               f"{what} ไม่สำเร็จเมื่อ {now:%d/%m/%Y %H:%M} น.\n\n"
+               f"ดูรายละเอียด (log): {url}\n\n"
+               "ขั้นคัดแยก/อ่านเอกสาร: ข้อมูลที่ดึงมายังอยู่ในฐานข้อมูลครบ รันซ้ำได้ที่ GitHub Actions → "
+               "Classify titles / Read documents แล้วส่งอีเมลชดเชยด้วย Morning digest (--since-days)\n"
+               "อีเมลเช้า: Lead ยังอยู่ในหน้าเว็บ KG Lead ตามปกติ\n")
 
 
 if __name__ == "__main__":

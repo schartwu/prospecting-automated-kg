@@ -25,3 +25,12 @@ jobs:
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           BACKUP_RECIPIENTS: ${{ vars.BACKUP_RECIPIENTS }}
         run: python scripts/archive.py
+
+      # Emails ADMIN_ALERT_EMAIL when a step above failed (6-8 Nov 2026 failed silently for 3 evenings).
+      - name: Alert the admin if anything failed
+        if: failure()
+        env:
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+          ADMIN_ALERT_EMAIL: ${{ vars.ADMIN_ALERT_EMAIL }}
+        run: python scripts/health.py --step-failed "Archive before cleanup (Saturday)"
