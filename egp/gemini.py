@@ -15,7 +15,6 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 BUDGETS = {
     "gemini-3.6-flash": 19,
     "gemini-3-flash-preview": 19,
-    "gemini-2.5-flash": 19,
     "gemini-3.8-flash": 19,
     "gemini-3.5-flash-lite": 450,
     "gemini-3.1-flash-lite": 450,
@@ -23,11 +22,12 @@ BUDGETS = {
 # Judgement calls (classification) prefer the stronger Flash models; plain field extraction from
 # documents is easy, so it goes to the high-quota Flash-Lite models first.
 # Order set by the user on 16 Nov 2026: 3.8 Flash last among Flash, since it answered 503 on every call
-# from 9 to 15 Nov 2026 (as in the Bidding Web-App); 2.5 Flash added back after a test call worked.
-FLASH_FIRST = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.8-flash",
+# from 9 to 15 Nov 2026 (as in the Bidding Web-App). 2.5 Flash, 3rd in the user's order, still answers 404
+# "no longer available to new users" for this key (classify.py --try-model, 16 Nov 2026), so it is left out.
+FLASH_FIRST = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-3.8-flash",
                "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
 LITE_FIRST = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
-              "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.8-flash"]
+              "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-3.8-flash"]
 # Requests per Flash model kept back from classification for reading scanned documents (enrich.py reads
 # scans with Flash first, Flash-Lite after). Since local governments were added (29 Oct 2026) classification used all of
 # 3.8/3.6-flash every evening and scanned reference prices (15) waited until they dropped out.
