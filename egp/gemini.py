@@ -9,6 +9,7 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 
 # Daily request budget per model, kept just under the free-tier quota (requests per day, reset at
 # midnight Pacific) so we never hit the hard limit. Usage is counted in Supabase (ai_usage / ai_take).
+# Flash-Lite raised from 450 to 499 of 500 on 16 Nov 2026 (user; every call is counted, retries included).
 # Checked against AI Studio's rate-limit page on 2 Nov 2026: Flash models 20 a day each (3 Flash is
 # served as gemini-3-flash-preview), 3.1 and 3.5 Flash-Lite 500. 2.5 Flash and 2.5 Flash-Lite answered 404
 # "no longer available to new users" on 3 Nov 2026, so they were dropped.
@@ -16,8 +17,8 @@ BUDGETS = {
     "gemini-3.6-flash": 19,
     "gemini-3-flash-preview": 19,
     "gemini-3.8-flash": 19,
-    "gemini-3.5-flash-lite": 450,
-    "gemini-3.1-flash-lite": 450,
+    "gemini-3.5-flash-lite": 499,
+    "gemini-3.1-flash-lite": 499,
 }
 # Judgement calls (classification) prefer the stronger Flash models; plain field extraction from
 # documents is easy, so it goes to the high-quota Flash-Lite models first.
