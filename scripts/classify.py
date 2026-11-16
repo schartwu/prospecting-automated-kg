@@ -14,7 +14,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from egp import rules  # noqa: E402
 from egp.classify import classify_titles  # noqa: E402
-from egp.gemini import Gemini, QuotaExhausted, list_models  # noqa: E402
+from egp.gemini import Gemini, QuotaExhausted, list_models, try_model  # noqa: E402
 from egp.db import DB  # noqa: E402
 
 TYPES = ["P0", "15", "B0", "D0", "W0", "W2"]
@@ -26,11 +26,16 @@ def main():
     ap.add_argument("--max-titles", type=int, default=10000)
     ap.add_argument("--no-ai", action="store_true", help="rules only")
     ap.add_argument("--list-models", action="store_true")
+    ap.add_argument("--try-model", action="append", default=[], help="one test call to this model, then exit")
     args = ap.parse_args()
 
     key = os.environ.get("GEMINI_API_KEY", "")
     if args.list_models:
         print("\n".join(list_models(key)))
+        return
+    if args.try_model:
+        for model in args.try_model:
+            print(try_model(key, model), flush=True)
         return
 
     db = DB()

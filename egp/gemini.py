@@ -13,18 +13,21 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 # served as gemini-3-flash-preview), 3.1 and 3.5 Flash-Lite 500. 2.5 Flash and 2.5 Flash-Lite answered 404
 # "no longer available to new users" on 3 Nov 2026, so they were dropped.
 BUDGETS = {
-    "gemini-3.8-flash": 19,
     "gemini-3.6-flash": 19,
     "gemini-3-flash-preview": 19,
-    "gemini-3.1-flash-lite": 450,
+    "gemini-2.5-flash": 19,
+    "gemini-3.8-flash": 19,
     "gemini-3.5-flash-lite": 450,
+    "gemini-3.1-flash-lite": 450,
 }
 # Judgement calls (classification) prefer the stronger Flash models; plain field extraction from
 # documents is easy, so it goes to the high-quota Flash-Lite models first.
-FLASH_FIRST = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview",
-               "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
-LITE_FIRST = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite",
-              "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-3.8-flash"]
+# Order set by the user on 16 Nov 2026: 3.8 Flash last among Flash, since it answered 503 on every call
+# from 9 to 15 Nov 2026 (as in the Bidding Web-App); 2.5 Flash added back after a test call worked.
+FLASH_FIRST = ["gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.8-flash",
+               "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+LITE_FIRST = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+              "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.8-flash"]
 # Requests per Flash model kept back from classification for reading scanned documents (enrich.py reads
 # scans with Flash first, Flash-Lite after). Since local governments were added (29 Oct 2026) classification used all of
 # 3.8/3.6-flash every evening and scanned reference prices (15) waited until they dropped out.
@@ -40,12 +43,19 @@ class _ModelUnavailable(RuntimeError):
     pass
 
 
+class _ModelBusy(RuntimeError):
+    pass
+
+
 class Gemini:
     def __init__(self, api_key: str, take):
         """take(model, budget) -> bool reserves one request against today's budget (ai_take RPC)."""
         self.api_key = api_key
         self.take = take
         self.skip: set[str] = set()  # models out of budget/quota or not offered to this key
+        # Models that answered 500/503 once in this run are not called again until the next run: each
+        # call costs a request and 13 s, and 3.8 Flash answered 503 on all ~55 calls of 9-15 Nov 2026.
+        self.busy: dict[str, str] = {}
 
     def json(self, prompt: str, schema: dict, models: list[str], validate=None, max_output: int = 32768,
              attachments: list[tuple[str, bytes]] = (), reserve: int = 0):
@@ -54,7 +64,7 @@ class Gemini:
         reserve: requests of each non-Lite model's daily budget this call must leave unused."""
         errors = []
         for model in models:
-            if model in self.skip:
+            if model in self.skip or model in self.busy:
                 continue
             try:
                 budget = BUDGETS[model] - (0 if "lite" in model else reserve)
@@ -63,10 +73,17 @@ class Gemini:
                 self.skip.add(model)
                 errors.append(str(e))
                 print(f"  gemini: stop using {e}", flush=True)
+            except _ModelBusy as e:
+                self.busy[model] = str(e)
+                errors.append(str(e))
+                print(f"  gemini: {e}, not called again this run", flush=True)
             except RuntimeError as e:
                 errors.append(str(e))
         if all(m in self.skip for m in models):
             raise QuotaExhausted(" | ".join(errors))
+        # Keeps "HTTP 503" in the message when only busy models are left: enrich saves it as the row's
+        # error and documents whose AI read failed with HTTP 500/503 are read again next run.
+        errors += [self.busy[m] for m in models if m in self.busy and self.busy[m] not in errors]
         raise RuntimeError(" | ".join(errors))
 
     def _call(self, model, prompt, schema, validate, max_output, attachments=(), retries: int = 2, budget=None):
@@ -93,7 +110,7 @@ class Gemini:
                     # "model is currently experiencing high demand": the next model now, not a retry here.
                     # On 2 Nov 2026 retrying spent the Flash requests kept for scans on 503s (each call
                     # counts) and no scan was read.
-                    raise RuntimeError(f"{model} busy: HTTP {resp.status_code}")
+                    raise _ModelBusy(f"{model} busy: HTTP {resp.status_code}")
                 if resp.status_code == 429:
                     last = f"HTTP {resp.status_code}: {resp.text[:200]}"
                     time.sleep(30)
@@ -106,6 +123,13 @@ class Gemini:
             except (requests.RequestException, KeyError, ValueError, json.JSONDecodeError) as e:
                 last = f"{type(e).__name__}: {e}"
         raise RuntimeError(f"{model} failed after {retries} attempts: {(last or '')[:300]}")
+
+
+def try_model(api_key: str, model: str) -> str:
+    """One tiny call to see whether this key may use a model (not counted in ai_usage)."""
+    resp = requests.post(GEMINI_URL.format(model=model), timeout=120, headers={"x-goog-api-key": api_key},
+                         json={"contents": [{"parts": [{"text": "Reply with the word OK."}]}]})
+    return f"{model}: HTTP {resp.status_code} {resp.text[:300]}"
 
 
 def list_models(api_key: str) -> list[str]:
