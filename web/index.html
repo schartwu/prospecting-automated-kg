@@ -607,7 +607,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
       .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
     const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
-    const byType = ["B0", "15", "D0"].map(t => [t, leads.filter(r => r.type === t)]);
+    // ประกาศเชิญชวน leaves out the ones past the bid date with no status: they have their own row below it,
+    // so the rows add up to รวม (user, 23 Nov 2026)
+    const byType = ["B0", "15", "D0"].map(t => [t, leads.filter(r => r.type === t && leadState(r) !== "missed")]);
     const letGo = leads.filter(r => leadState(r) === "missed");
     const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
       ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
@@ -617,7 +619,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const mini = r => `<a class="mini" href="${href({ lead: r.lead_key, from: "overview" })}"><span class="t">${esc(r.title)}</span><span class="amt">${short(r.budget_thb)}</span>
       <span class="small muted">${esc(TYPE[r.type])} · ${esc(r.dept_name || "")}${r.type === "D0" && r.bid_date ? ` · <span class="${daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} (${dueText(r.bid_date)})</span>` : ""}</span>
       <span>${leadPill(r)}</span></a>`;
-    const MISSED_ROW = `<tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">↳ ⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">อยู่ในประกาศเชิญชวนข้างบน: ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>`;
+    const MISSED_ROW = `<tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>`;
     const COLS = '<colgroup><col><col style="width:64px"><col style="width:118px"></colgroup>';
     const all = state.leads.filter(areaOk);
     body.innerHTML = `
@@ -633,7 +635,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
           <div class="tbl split plans"><table>${COLS}<thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
           </tbody></table></div>
           <div class="tbl split"><table>${COLS}<tbody>
-          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา (รวมที่เลยวันยื่นซองแล้ว)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>${t === "D0" ? MISSED_ROW : ""}`).join("")}
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: t === "D0" ? "notmissed" : "all", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา · ไม่รวมที่เลยวันยื่นซองแล้วไม่มีใครอัปเดต (แถวถัดไป)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>${t === "D0" ? MISSED_ROW : ""}`).join("")}
           <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
           </tbody></table></div></div>
         <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", type: "all", status: "all", sort: "budget", sync: "overview", score: O.score, method: O.method })}">ดูทั้งหมด →</a></div>
@@ -668,7 +670,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"]].map(([k, l]) => [k, l, r => leadState(r) === k]),
     ["bid", "ยื่นแล้ว (รวมที่มีผลแล้ว)", bidDone],
     ...[["no_bid", "ไม่ยื่น"], ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"], ["awarded", "ประกาศผู้ชนะแล้ว"]]
-      .map(([k, l]) => [k, l, r => leadState(r) === k])];
+      .map(([k, l]) => [k, l, r => leadState(r) === k]),
+    // opened from ภาพรวม's ประกาศเชิญชวน row only; its button shows only while it is the one picked
+    ["notmissed", "ไม่รวมที่เลยวันยื่นซอง ไม่มีใครอัปเดต", r => leadState(r) !== "missed"]];
   const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
     budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
     deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
@@ -697,7 +701,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
           `<button class="chip" type="button" data-type="${k}" aria-pressed="${L.type === k}">${l}<span class="n">${area.filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(r => isType(k, r)).length}</span></button>`).join(""))}
         ${methodChips(L.method, area.filter(byType).filter(byScore).filter(sf).filter(byText))}
         ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
-        ${frow("สถานะ", STATUS_FILTERS.map(([k, l, f]) =>
+        ${frow("สถานะ", STATUS_FILTERS.filter(([k]) => k !== "notmissed" || L.status === k).map(([k, l, f]) =>
           `<button class="chip" type="button" data-status="${k}" aria-pressed="${L.status === k}">${l}<span class="n">${area.filter(byType).filter(byScore).filter(byMethod).filter(byText).filter(f).length}</span></button>`).join(""))}
         <div class="toolrow">
           <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อ หน่วยงาน เลขโครงการ/แผน" value="${esc(L.q)}" aria-label="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด เลขโครงการ หรือเลขแผน">
