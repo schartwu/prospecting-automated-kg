@@ -14,8 +14,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap">
 <!-- config.js is written at deploy time (.github/workflows/pages.yml): window.EGP_API = "<function url>" -->
 <script src="config.js"></script>
-<!-- SheetJS, only for the "ดาวน์โหลด Excel" buttons -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<!-- SheetJS, only for the "ดาวน์โหลด Excel" buttons. integrity: the browser runs this exact file only, since a
+     script from elsewhere could read the person's link (#t=...) on this page. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer
+  integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
 /* KG Lead. Pages: ภาพรวม (what needs attention, how we are doing), Lead (opportunities: plans, draft TORs,
    reference prices, invitations), ติดตามสถานะ (leads someone has acted on, by stage), ผลลัพธ์ (who won),
@@ -495,7 +497,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     m.querySelector("[data-ok]").onclick = async () => {
       sel.disabled = true; m.textContent = "กำลังบันทึก…";
       try { await save(sel.value ? Number(sel.value) : null); }
-      catch (e) { sel.disabled = false; m.className = cls + " err"; m.textContent = e.message; }
+      // back to who has it, so picking the name again asks again
+      catch (e) { sel.disabled = false; sel.value = before; m.className = cls + " err"; m.textContent = e.message; }
     };
   }
   // the admin's "ดูในมุมมองของ": read only, until switched back
@@ -1287,7 +1290,15 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     if (view === "results" && ["score", "method", "open"].some(k => p.has(k))) {
       Object.assign(state.r, { score: known(SCORE_FILTERS, p.get("score"), "all"), method: methodKey(p.get("method")), open: p.get("open") || null, shown: 100 });
     }
-    if (lead) { renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from")); }
+    if (lead) {
+      // know the account first, so a lead link opened straight from an email shows that person's tabs
+      // (a Sale's three), also when the lead itself cannot be opened
+      if (!state.user) {
+        try { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
+        catch (e) { /* showLead below shows the error */ }
+      }
+      renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from"));
+    }
     currentView = view;
     renderNav(view);
     try {

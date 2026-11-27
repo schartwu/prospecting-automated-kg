@@ -275,7 +275,7 @@ Deno.serve(async (req) => {
       if (!STATUSES.includes(status)) return reply({ error: "เลือกสถานะก่อนกดบันทึก" }, 400);
       if (status === "no_bid" && !reasons.length) return reply({ error: "เลือกเหตุผลที่ไม่ยื่นอย่างน้อย 1 ข้อ" }, 400);
       if (status === "other" && !note) return reply({ error: "สถานะ “อื่น ๆ” ต้องใส่หมายเหตุ" }, 400);
-      if (price !== null && !(price >= 0)) return reply({ error: "ราคาที่ยื่นต้องเป็นตัวเลข" }, 400);
+      if (price !== null && !(Number.isFinite(price) && price >= 0 && price < 1e13)) return reply({ error: "ราคาที่ยื่นต้องเป็นตัวเลข" }, 400);
       // The same locks as the web page, so an old tab or a hand-made request cannot save past them.
       const { data: lead, error: leadError } = await db.rpc("lead_detail", { p_key: key });
       if (leadError) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);

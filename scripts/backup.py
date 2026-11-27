@@ -1,4 +1,4 @@
-"""Weekly backup of what cannot be fetched again from e-GP: the Lead Loop statuses and users.
+"""Weekly backup of what cannot be fetched again from e-GP: the Lead Loop statuses, hand-outs and users.
 
 The Supabase Free plan keeps no backups we can restore ourselves, and this repository is public, so the
 files are emailed (to BACKUP_RECIPIENTS) instead of being stored as a run artifact. Link tokens are left
@@ -18,7 +18,9 @@ from egp.db import DB  # noqa: E402
 
 TABLES = {
     "lead_events": "id,lead_key,status,reasons,bid_price,note,user_id,created_at",
-    "lead_users": "id,name,email,role,active,created_at",
+    "lead_users": "id,name,email,role,can_assign,active,created_at",
+    # who handed which lead to which Sale (phase 2, 27 Nov 2026)
+    "lead_assignments": "id,lead_key,assignee_id,assigned_by,assigned_at,notified_at",
 }
 
 

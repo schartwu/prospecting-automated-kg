@@ -133,17 +133,18 @@ def main():
                        key=lambda x: ((x[1] or {}).get("bid_date") or "9999", x[0]["assigned_at"]))
         subject = f"📌 KG Lead: งานใหม่ที่ได้รับมอบหมาย {len(items)} งาน ({now:%d/%m/%Y %H:%M})"
         if not (args.send or tests):
-            print(f"{p['name']}: {len(items)} lead(s) -> {', '.join(h['lead_key'] for h in hs)}")
+            # Actions logs of this public repository are public: account ids and counts only, no names
+            print(f"account {pid}: {len(items)} lead(s)")
             continue
         body = email_html(p, items, app_url, today)
         if tests:
             send(f"[ทดสอบ ถึง {p['name']}] {subject}", body, None, tests, sender_name=SENDER_NAME)
-            print(f"test copy for {p['name']} ({len(items)} lead(s)) sent")
+            print(f"test copy for account {pid} ({len(items)} lead(s)) sent")
             continue
         send(subject, body, None, [p["email"]], sender_name=SENDER_NAME)
         ids = ",".join(str(h["id"]) for h in hs)
         db.update("lead_assignments", {"notified_at": datetime.now(BKK).isoformat()}, id=f"in.({ids})")
-        print(f"{p['name']}: {len(items)} lead(s) sent")
+        print(f"account {pid}: {len(items)} lead(s) sent")
 
 
 if __name__ == "__main__":
