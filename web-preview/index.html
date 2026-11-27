@@ -454,12 +454,12 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   // day of the latest status update.
   const state = {
     user: null, provinces: [], days: [], area: "target",
-    per: { leads: { preset: "last" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" }, assign: { preset: "month" } },
+    per: { leads: { preset: "month" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" }, assign: { preset: "month" } },
     cache: {}, leads: null, outcomes: null, tracking: null,
     // phase 2: a Sale's own leads, the มอบหมายงาน tab, the Sales a lead can go to, the admin's view-as
     mine: null, board: null, sales: [], as: (() => { try { return Number(sessionStorage.getItem("kg-as")) || null; } catch (e) { return null; } })(),
     realAdmin: false, srInit: false, a: { pick: null },
-    l: { type: "D0", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 },
+    l: { type: "np", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
     r: { q: "", score: "all", method: "all", shown: 100, open: null },
     o: { score: "all", method: "all" },
@@ -522,7 +522,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       state.as = Number(sel.value) || null;
       try { if (state.as) sessionStorage.setItem("kg-as", String(state.as)); else sessionStorage.removeItem("kg-as"); } catch (e) { /* this tab only */ }
       Object.assign(state, { user: null, cache: {}, leads: null, outcomes: null, tracking: null, mine: null, board: null, srInit: false });
-      state.l = { type: "D0", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 };
+      state.l = { type: "np", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 };
       state.area = "target";
       if (hashParams().get("v") === "leads" && !hashParams().get("lead")) route(); else location.hash = href({ v: "leads" });
     };
