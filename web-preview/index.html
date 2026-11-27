@@ -1205,7 +1205,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
     const groups = retro ? [["บันทึกหลังประกาศผล", ["bid", "no_bid"]]] : GROUPS;
     const emk = methodGroup(anns.map(a => a.method).find(Boolean)) === "emarket" && !anns.some(a => a.type === "D0");
-    const form = notMine && !state.as ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">${asg ? "งานนี้มอบหมายให้คนอื่นแล้ว" : "งานนี้ยังไม่ได้มอบหมายให้คุณ"} · อัปเดตสถานะได้เมื่อ DV / Tele มอบหมายงานนี้ให้คุณ</div></div>`
+    const form = notMine ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">${asg ? "งานนี้มอบหมายให้คนอื่นแล้ว" : "งานนี้ยังไม่ได้มอบหมายให้คุณ"} · อัปเดตสถานะได้เมื่อ DV / Tele มอบหมายงานนี้ให้คุณ</div></div>`
       : isDV && locked && !retro ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">โครงการนี้ถูกยกเลิกแล้ว จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
       : isDV ? `<div class="card" id="form"><h2>${retro ? "บันทึกย้อนหลัง" : "อัปเดตสถานะ"}</h2>
         ${retro ? '<div class="small muted">ประกาศผู้ชนะแล้ว ถ้ายื่นราคาไปแล้วหรือตัดสินใจไม่ยื่นแต่ยังไม่ได้กด บันทึกได้ที่นี่ (ผลจะเปลี่ยนจาก “บริษัทอื่นชนะ” เป็น “แพ้” เมื่อบันทึกว่ายื่นแล้ว)</div>' : ""}
