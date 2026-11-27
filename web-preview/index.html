@@ -307,9 +307,9 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const VIEWS = [
     ["leads", "Lead", '<path d="M4 6h16M4 12h16M4 18h10"/>'],
     ["tracking", "ติดตามสถานะ", '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z"/>'],
+    ["assign", "สรุปมอบหมายงาน", '<circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 11l2 2 4-4"/>'],
     ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
     ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
-    ["assign", "มอบหมายงาน", '<circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 11l2 2 4-4"/>'],
     ["guide", "คู่มือ", '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5"/>'],
     ["usage", "การใช้งาน", '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M21 20a6 6 0 0 0-4-5.6"/>'],
   ];
@@ -348,9 +348,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const sum = (rows, k) => rows.reduce((a, r) => a + (num(r[k]) || 0), 0);
 
   function hashParams() { return new URLSearchParams(location.hash.slice(1)); }
-  // A copied lead link carries no token: the page uses the one this browser kept from the person's own link.
-  const storedToken = () => { try { return localStorage.getItem("kg-token") || ""; } catch (e) { return ""; } };
-  const token = () => hashParams().get("t") || storedToken();
+  const token = () => hashParams().get("t") || "";
   const href = (o = {}) => "#" + new URLSearchParams({ t: token(), ...o });
 
   function statusPill(s, by, at) {
@@ -392,7 +390,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   setInterval(() => { if (pingView && document.visibilityState === "visible") ping(pingView, false); }, 60000);
   document.addEventListener("visibilitychange", () => { if (pingView && document.visibilityState === "visible") ping(pingView, false); });
 
-  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", assign: "มอบหมายงาน", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
+  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", assign: "สรุปมอบหมายงาน", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
   let usageTimer = null;
   async function usagePage(quiet) {
     if (!quiet) main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
@@ -471,16 +469,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const canAssign = () => !!(state.user && state.user.can_assign) && !state.as;
   const seesBoard = () => !!state.user && !state.user.sr && state.user.role !== "viewer";
   const SR_VIEWS = ["leads", "tracking", "guide"];
-  const leadUrl = key => `${location.origin}${location.pathname}#${new URLSearchParams({ lead: key })}`;
-  // the text DV pastes into Line or an email: the lead in short and a link without anyone's token
-  async function copyLead(r, btn) {
-    const text = [r.title, r.dept_name, [num(r.budget_thb) !== null ? `งบ ${baht(r.budget_thb)}` : "",
-      r.bid_date ? `ยื่นซอง ${thDate(r.bid_date)}${r.bid_time ? " " + r.bid_time : ""}` : ""].filter(Boolean).join(" · "), leadUrl(r.lead_key)]
-      .filter(Boolean).join("\n");
-    try { await navigator.clipboard.writeText(text); }
-    catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
-    const was = btn.textContent; btn.textContent = "✓ คัดลอกแล้ว"; setTimeout(() => { btn.textContent = was; }, 1800);
-  }
+  // ภาพรวม is hidden from the team for now (27 Nov 2026), not removed: take it out of this list to bring it back
+  const ADMIN_VIEWS = ["overview", "usage"];
   // who has the lead now, on every list this page holds (after handing it out or taking it back)
   function applyHand(key, a) {
     [...Object.values(state.cache).map(c => c.leads), state.mine].filter(Boolean).forEach(list => list.forEach(r => {
@@ -493,7 +483,6 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const handPill = r => r.assignee && !isSR() ? `<span class="pill who" title="${esc(`มอบโดย ${r.assigned_by} · ${thTime(r.assigned_at)}`)}">👤 ${esc(r.assignee)}</span>` : "";
   const salesOptions = id => `<option value="">— ยังไม่มอบหมาย —</option>` + state.sales.map(x => `<option value="${x.id}" ${id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("");
   const assignBar = r => `<div class="abar"><label>มอบให้ <select data-assign="${esc(r.lead_key)}" aria-label="มอบหมายให้">${salesOptions(r.assignee_id)}</select></label>
-    <button class="btn sm" type="button" data-copy="${esc(r.lead_key)}">📋 คัดลอกลิงก์</button>
     ${r.assigned_by ? `<span>มอบโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span>` : ""}<span class="amsg" aria-live="polite"></span></div>`;
   // Picking a name in "มอบให้" saves nothing yet: the person confirms first, in case the wrong name was picked.
   function askHand(sel, m, cls, was, save) {
@@ -615,7 +604,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
 
   // ---------------- layout pieces ----------------
   function renderNav(view) {
-    const shown = k => isSR() ? SR_VIEWS.includes(k) : k === "usage" ? !!(state.user && state.user.admin) : k === "assign" ? seesBoard() : true;
+    const shown = k => isSR() ? SR_VIEWS.includes(k) : ADMIN_VIEWS.includes(k) ? !!(state.user && state.user.admin) : k === "assign" ? seesBoard() : true;
     document.getElementById("nav").innerHTML = VIEWS.filter(([k]) => shown(k)).map(([k, label, icon]) =>
       `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${k === "leads" && isSR() ? "งานของฉัน" : label}</a>`).join("");
   }
@@ -848,7 +837,6 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { L.score = b.dataset.score; L.shown = 60; leadsPage(body, redraw); });
     body.querySelectorAll("[data-status]").forEach(b => b.onclick = () => { L.status = b.dataset.status; L.shown = 60; leadsPage(body, redraw); });
     body.querySelectorAll("[data-asg]").forEach(b => b.onclick = () => { L.asg = b.dataset.asg; L.shown = 60; leadsPage(body, redraw); });
-    body.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyLead(rows.find(r => r.lead_key === b.dataset.copy), b));
     body.querySelectorAll("[data-assign]").forEach(sel => sel.onchange = () => {
       const key = sel.dataset.assign, r = rows.find(x => x.lead_key === key);
       askHand(sel, sel.closest(".abar").querySelector(".amsg"), "amsg", r && r.assignee_id, async to => {
@@ -993,14 +981,14 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
           `<tr><td>${esc(x)}</td><td class="num">${n}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ไม่มีงานที่ไม่ยื่นในช่วงนี้</div>'}</div>`;
     body.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { A.pick = b.dataset.pick; assignPage(body); document.getElementById("drill")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
     const un = document.getElementById("undrill"); if (un) un.onclick = () => { A.pick = null; assignPage(body); };
-    document.getElementById("dl").onclick = () => download("มอบหมายงาน", rows.map(r => ({
+    document.getElementById("dl").onclick = () => download("สรุปมอบหมายงาน", rows.map(r => ({
       "มอบหมายให้": r.assignee || "", "มอบหมายโดย": r.assigned_by || "", "วันที่มอบหมาย": thTime(r.assigned_at),
       "ประเภทประกาศ (ล่าสุด)": TYPE[r.type] || r.type, "ชื่อโครงการ": r.title, "หน่วยงาน": r.dept_name, "จังหวัด": r.province || "",
       "งบประมาณ (บาท)": num(r.budget_thb) ?? "", "วันยื่นซอง": r.bid_date || "",
       "สถานะล่าสุด": r.status ? (STATUS[r.status] || r.status).replace(/^\S+\s/, "") : "", "ผู้กดสถานะ": r.status_by || "",
       "เหตุผลที่ไม่ยื่น": r.status === "no_bid" ? (B.reasons[r.lead_key] || []).join(", ") : "",
       "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "",
-      "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์ KG Lead": leadUrl(r.lead_key) })));
+      "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์ e-GP": r.link })));
   }
 
   // ---------------- ผลลัพธ์ ----------------
@@ -1106,10 +1094,13 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   function guide() {
     main.innerHTML = `<div class="grid2">
       <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
-        <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
-        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
-        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด ของงานแข่งขัน (e-bidding, e-market, คัดเลือก ฯลฯ) และงานที่เคยเป็น Lead ไม่รวมงานเฉพาะเจาะจงที่ไม่เคยเป็น Lead กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
-        <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead และงบรวม · Lead แยกตามประเภท (เรียงตามลำดับที่รัฐประกาศ แผน → ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) รวม Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · Lead งบสูงสุด · ความคืบหน้า · งานใกล้ปิดรับซอง · เริ่มต้น: เดือนนี้</dd></dl>
+        ${isSR() ? `<dt>งานของฉัน</dt><dd>งานที่ DV / Tele มอบหมายให้คุณ ทุกงานไม่จำกัดวันที่ เรียงตามวันยื่นซองที่ใกล้ที่สุด กดงานเพื่อเปิดหน้าโครงการแล้วกด “รับเรื่อง” และอัปเดตสถานะตามขั้นตอน · ถ้าเปิดงานที่ไม่ได้มอบให้คุณ ระบบจะแจ้งให้ติดต่อ DV</dd>`
+        : `<dt>Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: เดือนนี้ ทั้งหมดยกเว้นแผนจัดซื้อ ยังไม่มีสถานะ${canAssign() ? " · ช่อง “มอบให้” ใต้แต่ละโครงการ: เลือก GXX แล้วกด “ยืนยัน”" : ""}</dd>`}
+        <dt>ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
+        ${seesBoard() ? `<dt>สรุปมอบหมายงาน</dt><dd>งานที่มอบหมายในช่วงเวลาที่เลือก (นับตามวันที่มอบ) แยกราย GXX และรายผู้มอบหมาย: ได้รับ มูลค่า ยังไม่รับเรื่อง กำลังทำ ยื่น ไม่ยื่น ชนะ และ ⚠️ ค้าง (ยังไม่กดรับเรื่องเกิน 2 วันหลังมอบ หรือใกล้ปิดรับซอง 3 วันแต่ยังไม่ได้กดยื่น / ไม่ยื่น) กดตัวเลขเพื่อดูรายการ · เริ่มต้น: เดือนนี้</dd>` : ""}
+        ${isSR() ? "" : `<dt>ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด ของงานแข่งขัน (e-bidding, e-market, คัดเลือก ฯลฯ) และงานที่เคยเป็น Lead ไม่รวมงานเฉพาะเจาะจงที่ไม่เคยเป็น Lead กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
+        `}
+        ${state.user && state.user.admin ? `<dt>ภาพรวม (เห็นเฉพาะผู้ดูแลระบบ)</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead และงบรวม · Lead แยกตามประเภท (เรียงตามลำดับที่รัฐประกาศ แผน → ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) รวม Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · Lead งบสูงสุด · ความคืบหน้า · งานใกล้ปิดรับซอง · เริ่มต้น: เดือนนี้</dd>` : ""}</dl>
         <h2>ช่วงเวลาและพื้นที่</h2><dl>
         <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
         <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
@@ -1169,8 +1160,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const asg = data.assignment, hist = data.assign_history || [];
     const asgCard = isSR() ? (asg ? `<div class="card"><h2>การมอบหมาย</h2><div class="small">มอบหมายให้คุณโดย <b>${esc(asg.assigned_by)}</b> · ${esc(thTime(asg.assigned_at))}</div></div>` : "")
       : `<div class="card"><h2>มอบหมายงาน</h2>
-        ${canAssign() ? `<div class="toolrow"><label class="daterow">มอบให้ <select id="asg-sel" aria-label="มอบหมายให้">${salesOptions(asg ? asg.assignee_id : null)}</select></label>
-          <button class="btn sm" type="button" id="asg-copy">📋 คัดลอกลิงก์</button></div><div class="msg" id="asg-msg" aria-live="polite"></div>`
+        ${canAssign() ? `<div class="toolrow"><label class="daterow">มอบให้ <select id="asg-sel" aria-label="มอบหมายให้">${salesOptions(asg ? asg.assignee_id : null)}</select></label></div><div class="msg" id="asg-msg" aria-live="polite"></div>`
           : `<div class="small">${asg ? `มอบหมายให้ <b>${esc(asg.assignee)}</b> โดย ${esc(asg.assigned_by)} · ${esc(thTime(asg.assigned_at))}` : "ยังไม่มอบหมาย"}</div>`}
         ${hist.length ? `<div class="timeline">${[...hist].reverse().map(h => `<div><div class="when">${esc(thTime(h.at))} · ${esc(h.assigned_by)}</div>
           <div>${h.assignee ? "มอบให้ " + esc(h.assignee) : "ยกเลิกการมอบหมาย"}</div></div>`).join("")}</div>` : ""}</div>`;
@@ -1231,8 +1221,6 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       </div>`;
     const asel = document.getElementById("asg-sel");
     if (asel) {
-      document.getElementById("asg-copy").onclick = e => copyLead({ title: s.main.title, dept_name: s.main.dept_name, budget_thb: s.budget,
-        bid_date: s.d0 && s.d0.bid_date, bid_time: s.d0 && s.d0.bid_time, lead_key: current.key }, e.currentTarget);
       asel.onchange = () => askHand(asel, document.getElementById("asg-msg"), "msg", asg && asg.assignee_id, async to => {
         const res = await api("assign", { key: current.key, assignee_id: to });
         Object.assign(current.data, { assignment: res.assignment, assign_history: res.assign_history });
@@ -1278,11 +1266,9 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
 
   async function route() {
     const p = hashParams();
-    // keep the person's own link in this browser, so a lead link a colleague copies (no token) opens too
-    if (/^[0-9a-f]{64}$/.test(p.get("t") || "")) { try { localStorage.setItem("kg-token", p.get("t")); } catch (e) { /* the link still works */ } }
     if (!/^[0-9a-f]{64}$/.test(token())) {
       renderNav(null);
-      main.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert · ถ้าเปิดจากลิงก์ที่ทีมส่งให้ ให้เปิดลิงก์ KG Lead ของคุณจากอีเมลก่อน 1 ครั้งในเบราว์เซอร์นี้</div>';
+      main.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert</div>';
       return;
     }
     window.scrollTo(0, 0);
@@ -1305,7 +1291,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       if (!state.days.length || !state.user) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
     } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
     // a Sale has งานของฉัน, ติดตามสถานะ and คู่มือ; มอบหมายงาน is for DV / Tele / the admin
-    if ((isSR() && !SR_VIEWS.includes(view)) || (view === "assign" && !seesBoard())) {
+    if ((isSR() && !SR_VIEWS.includes(view)) || (view === "assign" && !seesBoard()) || (view === "overview" && !(state.user && state.user.admin))) {
       view = "leads"; currentView = view; history.replaceState(null, "", href({ v: view }));
     }
     // a Sale's list starts with all of their work, nearest bid day first

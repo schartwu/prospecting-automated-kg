@@ -88,10 +88,17 @@ async function handOuts() {
   return { history, current, sales };
 }
 
+// A plan (P:...) handed out before e-GP announced its project keeps its plan key, while the lead is then
+// keyed by the project: look under both.
+function handOf(current: Map<string, Current>, key: string, linkedPlan?: string | null) {
+  return current.get(key) ?? (linkedPlan ? current.get("P:" + linkedPlan) : undefined);
+}
+
 // who has each row's lead now, on every list row
 function withHand(rows: unknown[], current: Map<string, Current>) {
   return rows.map((r) => {
-    const c = current.get(String((r as { lead_key?: string }).lead_key ?? ""));
+    const row = r as { lead_key?: string; linked_plan?: string | null };
+    const c = handOf(current, String(row.lead_key ?? ""), row.linked_plan);
     return c ? { ...(r as object), ...c } : r;
   });
 }
@@ -204,11 +211,12 @@ Deno.serve(async (req) => {
       const [{ data, error }, hands] = await Promise.all([db.rpc("lead_detail", { p_key: key }), handOuts()]);
       if (error || !hands) return reply({ error: "โหลด Lead ไม่สำเร็จ" }, 500);
       if (!data?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
-      const k = String(data.lead_key || key), mine = hands.current.get(k);
+      const k = String(data.lead_key || key), mine = handOf(hands.current, k, data.linked_plan);
+      const planKey = data.linked_plan ? "P:" + data.linked_plan : null;
       if (sr && mine?.assignee_id !== user.id) return reply({ error: NOT_YOURS }, 403);
       return reply({
         user: me, ...data, assignment: mine ?? null,
-        assign_history: hands.history.filter((h) => h.lead_key === k),
+        assign_history: hands.history.filter((h) => h.lead_key === k || h.lead_key === planKey),
         ...(canAssign ? { sales: hands.sales } : {}),
       });
     }
@@ -222,15 +230,19 @@ Deno.serve(async (req) => {
       if (error || !hands) return reply({ error: "มอบหมายไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
       if (!lead?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
       if (to !== null && !hands.sales.some((s) => s.id === to)) return reply({ error: "เลือก GXX ที่จะมอบหมาย" }, 400);
-      const k = String(lead.lead_key || key), now = hands.current.get(k)?.assignee_id ?? null;
+      const k = String(lead.lead_key || key), planKey = lead.linked_plan ? "P:" + lead.linked_plan : null;
+      const now = handOf(hands.current, k, lead.linked_plan)?.assignee_id ?? null;
       if (now !== to) {
-        const { error: insErr } = await db.from("lead_assignments").insert({ lead_key: k, assignee_id: to, assigned_by: user.id });
+        // a hand-out still under the plan's key is closed, so the lead has one holder under its project key
+        const rows = [{ lead_key: k, assignee_id: to, assigned_by: user.id }];
+        if (planKey && planKey !== k && hands.current.has(planKey)) rows.unshift({ lead_key: planKey, assignee_id: null, assigned_by: user.id });
+        const { error: insErr } = await db.from("lead_assignments").insert(rows);
         if (insErr) return reply({ error: "มอบหมายไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
       }
       const after = await handOuts();
       if (!after) return reply({ error: "มอบหมายแล้ว แต่โหลดข้อมูลใหม่ไม่สำเร็จ รีเฟรชหน้า" }, 500);
-      return reply({ saved: true, lead_key: k, assignment: after.current.get(k) ?? null,
-        assign_history: after.history.filter((h) => h.lead_key === k) });
+      return reply({ saved: true, lead_key: k, assignment: handOf(after.current, k, lead.linked_plan) ?? null,
+        assign_history: after.history.filter((h) => h.lead_key === k || h.lead_key === planKey) });
     }
 
     case "assignments": {
@@ -273,7 +285,7 @@ Deno.serve(async (req) => {
       if (sr) {
         const hands = await handOuts();
         if (!hands) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
-        if (hands.current.get(project || key)?.assignee_id !== user.id) return reply({ error: NOT_YOURS }, 403);
+        if (handOf(hands.current, project || key, lead.linked_plan)?.assignee_id !== user.id) return reply({ error: NOT_YOURS }, 403);
       }
       if (!project.startsWith("P:")) {
         if (anns.some((a) => a.type === "D1" && a.project_no === project)) {
