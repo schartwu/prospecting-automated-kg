@@ -28,8 +28,10 @@ const PROVINCES = (Deno.env.get("TARGET_PROVINCES") ??
 const ADMIN_EMAILS = (Deno.env.get("ADMIN_EMAILS") ?? "schartwu@gmail.com").split(",").map((e) => e.trim().toLowerCase());
 const VIEWS = ["leads", "tracking", "results", "overview", "guide", "usage", "lead"];
 
-const STATUSES = ["received", "contacted", "sent_to_mer", "mer_replied", "bid", "no_bid", "other"];
-const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
+// The statuses that can be saved, as the DV / SR process with KG Lead (26 Nov 2026). contacted and
+// sent_to_mer are no longer offered; older records keep them.
+const STATUSES = ["received", "admin_pricing", "mer_replied", "pricing_done", "bid", "no_bid", "other"];
+const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "Mer ไม่สามารถหาสินค้าตาม TOR ได้", "Vender เข้าตรง", "อื่น ๆ"];
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

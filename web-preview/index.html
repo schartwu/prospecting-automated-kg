@@ -260,10 +260,14 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 <script>
 (() => {
   // ---------------- vocabulary ----------------
-  const STATUS = { received: "👀 รับเรื่อง", contacted: "🤝 ติดต่อ/เข้าพบหน่วยงาน", sent_to_mer: "📦 ส่งให้ Mer",
-    mer_replied: "💬 Mer ตอบแล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ" };
-  const GROUPS = [["กำลังทำ", ["received", "contacted", "sent_to_mer", "mer_replied"]], ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
-  const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
+  // The steps follow the DV / SR process with KG Lead (agreed 26 Nov 2026).
+  const STATUS = { received: "👀 รับเรื่อง", admin_pricing: "📧 ส่งเมล์หา Admin และ Pricing แล้ว", mer_replied: "💬 Mer ตอบกลับแล้ว",
+    pricing_done: "📊 Pricing สรุปงานและส่งเมล์กลับหา SR แล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ",
+    // no button since that process; kept so an older record still shows its name
+    contacted: "🤝 ติดต่อ/เข้าพบหน่วยงาน", sent_to_mer: "📦 ส่งให้ Mer" };
+  const LEGACY = ["contacted", "sent_to_mer"];
+  const GROUPS = [["กำลังทำ", ["received", "admin_pricing", "mer_replied", "pricing_done"]], ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
+  const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "Mer ไม่สามารถหาสินค้าตาม TOR ได้", "Vender เข้าตรง", "อื่น ๆ"];
   // The order e-GP publishes them: plan, draft TOR, reference price, invitation, then changes and results.
   // An array, because objects list the numeric key "15" first.
   const TYPE_ORDER = ["P0", "B0", "15", "D0", "D2", "D1", "W0", "W2", "W1"];
@@ -277,8 +281,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     W0: "ใครชนะ ราคาเท่าไร ใช้ดูคู่แข่ง", W2: "หน่วยงานเปลี่ยนผู้ชนะ ระบบใช้ผู้ชนะใหม่แทน (ดึงทุกวันศุกร์)",
     W1: "หน่วยงานยกเลิกผู้ชนะ โครงการกลับไปรอผล อัปเดตสถานะได้อีกครั้ง (ดึงทุกวันศุกร์)" };
   const STATUS_MEANING = {
-    received: "เห็น Lead แล้ว กำลังดูว่าจะไปต่อไหม", contacted: "โทร คุย หรือเข้าพบฝ่ายพัสดุ / ผู้ใช้งานของหน่วยงานแล้ว",
-    sent_to_mer: "ส่งรายการสินค้าหรือ Spec ให้ Mer ขอราคาและเช็กสินค้า", mer_replied: "ได้ราคาหรือข้อมูลสินค้าจาก Mer แล้ว",
+    received: "รับงานแล้ว เริ่มโหลดและสรุป TOR หารายการสินค้าเบื้องต้น", admin_pricing: "ส่งเมล์ให้ทีม Admin (จับคู่สินค้า) และทีม Pricing (ดูราคา) แล้ว",
+    mer_replied: "Mer ตอบกลับเรื่องสินค้าและราคาแล้ว", pricing_done: "Pricing สรุปงานและส่งเมล์กลับหา SR แล้ว รอ DV ตัดสินใจยื่นหรือไม่ยื่น",
+    contacted: "โทร คุย หรือเข้าพบฝ่ายพัสดุ / ผู้ใช้งานของหน่วยงานแล้ว", sent_to_mer: "ส่งรายการสินค้าหรือ Spec ให้ Mer ขอราคาและเช็กสินค้า",
     bid: "ยื่นซองในระบบ e-GP แล้ว (ใส่ราคาที่ยื่นได้)", no_bid: "ตัดสินใจไม่ยื่น ต้องเลือกเหตุผล", other: "กรณีอื่น ต้องเขียนหมายเหตุ" };
   const EDITORS = ["dv", "sale"];           // dv = Division Manager, sale = his team; viewer = monitor, read only
   const ROLE = { dv: "DV", sale: "Sale", viewer: "Monitor" };
@@ -618,7 +623,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const letGo = leads.filter(r => leadState(r) === "missed");
     const ended = announced.filter(isEnded);
     const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
-      ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
+      ["ส่งเมล์หา Admin/Pricing แล้ว", announced.filter(r => ["admin_pricing", "mer_replied", "pricing_done", "sent_to_mer"].includes(r.status) || bidDone(r)).length],
       ["ยื่นราคาแล้ว", bid.length],
       ["ชนะ (Lead ในช่วงนี้)", announced.filter(r => r.result === "win").length]];
     const max = Math.max(1, funnel[0][1]);
@@ -747,7 +752,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // ---------------- ติดตามสถานะ ----------------
   const STAGES = [["all", "ทั้งหมด", () => true],
     ["doing", "กำลังดำเนินการ", r => ["received", "contacted", "other"].includes(r.status) && !r.result],
-    ["mer", "รอ Mer", r => r.status === "sent_to_mer" && !r.result], ["merok", "Mer ตอบแล้ว", r => r.status === "mer_replied" && !r.result],
+    ["sent", "ส่งเมล์หา Admin/Pricing แล้ว", r => ["admin_pricing", "sent_to_mer"].includes(r.status) && !r.result],
+    ["merok", "Mer ตอบกลับแล้ว", r => r.status === "mer_replied" && !r.result],
+    ["pricing", "Pricing สรุปแล้ว", r => r.status === "pricing_done" && !r.result],
     ["bid", "ยื่นราคาแล้ว รอผล", r => r.status === "bid" && !r.result], ["result", "มีผลแล้ว", r => !!r.result],
     ["nobid", "ไม่ยื่น", r => r.status === "no_bid" && !r.result]];
   const TSORTS = { latest: ["อัปเดตล่าสุด", (a, b) => String(b.status_at).localeCompare(String(a.status_at))],
@@ -918,7 +925,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <dt>${scoreBadge(75)} 89–75</dt><dd>ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
         <dt>${scoreBadge(60)} 74–60</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
         <dt>${scoreBadge(50)} 59–50</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
-        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div>
+        <h2>สถานะ</h2><dl>${Object.entries(STATUS).filter(([k]) => !LEGACY.includes(k)).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div>
       <div class="gcol"><div class="card legend"><h2>วิธีจัดหา</h2><dl>
         <dt>e-bidding</dt><dd>ประกวดราคาอิเล็กทรอนิกส์ ยื่นเอกสารและราคาในระบบ e-GP ภายในวันยื่นซอง (วงเงินเกิน 5 แสนบาท)</dd>
         <dt>e-market</dt><dd>สินค้าทั่วไปที่มีสเปกในแคตตาล็อก e-GP ยื่นราคาในระบบ e-GP</dd>
@@ -974,7 +981,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const locked = awarded || anns.some(a => a.type === "D1");
     // After the winner is announced only "ยื่นราคาแล้ว" / "ไม่ยื่น" can still be recorded, for a Sale who bid
     // (or decided not to) and forgot to press it: a recorded bid turns "บริษัทอื่นชนะ" into "แพ้" and counts
-    // in ยื่นราคาแล้ว. Steps before the result (รับเรื่อง, ส่งให้ Mer …) stay closed. A cancelled project stays closed.
+    // in ยื่นราคาแล้ว. Steps before the result (รับเรื่อง, ส่งเมล์หา Admin …) stay closed. A cancelled project stays closed.
     const retro = awarded && !anns.some(a => a.type === "D1");
     const awardDay = awarded ? aw.pub_date : null;
     const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
