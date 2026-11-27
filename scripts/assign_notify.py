@@ -72,11 +72,11 @@ def email_html(person, items, app_url, today):
         link = f"{app_url}#{urlencode({'t': person['token'], 'lead': h['lead_key']})}"
         if r:
             left = (date.fromisoformat(r["bid_date"]) - today).days if r.get("bid_date") else None
-            when = (f"ยื่นซอง {th_date(r['bid_date'])}{' ' + r['bid_time'] if r.get('bid_time') else ''}"
+            when = (f"ยื่นซอง {th_date(r['bid_date'])}{' ' + html.escape(str(r['bid_time'])) if r.get('bid_time') else ''}"
                     + (f" · <b style='color:#b3261e'>อีก {left} วัน</b>" if left is not None and 0 <= left <= 3
                        else f" · อีก {left} วัน" if left is not None and left > 3 else "")) if r.get("bid_date") else ""
             title = (f"<span style='color:#666;font-size:12px'>{html.escape(TYPE_LABEL.get(r['type'], r['type']))}"
-                     f" · คะแนน {r.get('score', '')}</span><br><b>{html.escape(r['title'] or '')}</b>"
+                     f" · คะแนน {html.escape(str(r.get('score', '')))}</span><br><b>{html.escape(r['title'] or '')}</b>"
                      f"<div style='color:#555;font-size:13px'>{html.escape(r.get('dept_name') or '')}"
                      f" · {html.escape(r.get('province') or 'ไม่ระบุจังหวัด')}"
                      f"{' · ' + when if when else ''}</div>")
