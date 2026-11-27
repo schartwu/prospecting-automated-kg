@@ -495,7 +495,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     m.querySelector("[data-ok]").onclick = async () => {
       sel.disabled = true; m.textContent = "กำลังบันทึก…";
       try { await save(sel.value ? Number(sel.value) : null); }
-      catch (e) { sel.disabled = false; m.className = cls + " err"; m.textContent = e.message; }
+      // back to who has it, so picking the name again asks again
+      catch (e) { sel.disabled = false; sel.value = before; m.className = cls + " err"; m.textContent = e.message; }
     };
   }
   // the admin's "ดูในมุมมองของ": read only, until switched back
