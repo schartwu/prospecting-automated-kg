@@ -16,8 +16,9 @@
 //   usage  -> who uses the web app (admin accounts only, ADMIN_EMAILS)
 //   (any action) as -> the admin views as another account, read only
 //
-// A Sale (role sale without can_assign) sees only the leads handed to them (phase 2, 27 Nov 2026): their
-// Lead list, ติดตามสถานะ and lead pages are cut here, not only hidden on the page.
+// A Sale (role sale without can_assign) sees the Lead list and every lead page like the DV, but saves a status
+// only on the leads handed to them (27 Nov 2026, evening; it was: sees only their own leads). Their งานของฉัน
+// list (leads with mine = true) and ติดตามสถานะ hold only their own leads. The checks are here, not only on the page.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -32,7 +33,7 @@ const PROVINCES = (Deno.env.get("TARGET_PROVINCES") ??
 
 // Who may read the usage summary. A function secret overrides it.
 const ADMIN_EMAILS = (Deno.env.get("ADMIN_EMAILS") ?? "schartwu@gmail.com").split(",").map((e) => e.trim().toLowerCase());
-const VIEWS = ["leads", "tracking", "results", "overview", "assign", "guide", "usage", "lead"];
+const VIEWS = ["leads", "mine", "tracking", "results", "overview", "assign", "guide", "usage", "lead"];
 
 // The statuses that can be saved, as the DV / SR process with KG Lead (26 Nov 2026). contacted and
 // sent_to_mer are no longer offered; older records keep them.
@@ -151,9 +152,9 @@ async function handle(req: Request): Promise<Response> {
   if (viewingAs && body.action === "ping") return reply({ ok: true });
   const admin = ADMIN_EMAILS.includes(String(user.email).toLowerCase());
   const canAssign = !!user.can_assign;
-  const sr = user.role === "sale" && !canAssign;          // a Sale: sees only the leads handed to them
-  const me = { name: user.name, role: user.role, admin, can_assign: canAssign, sr, viewing_as: viewingAs ? user.id : null };
-  const NOT_YOURS = "งานนี้ไม่ได้มอบหมายให้คุณ ถ้าต้องการทำงานนี้ ติดต่อ DV";
+  const sr = user.role === "sale" && !canAssign;          // a Sale: saves only on the leads handed to them
+  const me = { id: user.id, name: user.name, role: user.role, admin, can_assign: canAssign, sr, viewing_as: viewingAs ? user.id : null };
+  const NOT_YOURS = "งานนี้ยังไม่ได้มอบหมายให้คุณ อัปเดตสถานะได้เมื่อ DV / Tele มอบหมายให้";
 
   switch (body.action) {
     case "me":
@@ -178,9 +179,9 @@ async function handle(req: Request): Promise<Response> {
     case "items":
     case "leads":
     case "outcomes": {
-      if (sr) {
-        // a Sale's Lead list: every lead handed to them, whatever its email day
-        if (body.action !== "leads") return reply({ error: "หน้านี้สำหรับ DV" }, 403);
+      if (sr && body.action !== "leads") return reply({ error: "หน้านี้สำหรับ DV" }, 403);
+      if (sr && body.mine === true) {
+        // a Sale's งานของฉัน: every lead handed to them, whatever its email day
         const hands = await handOuts();
         if (!hands) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
         const keys = [...hands.current].filter(([, c]) => c.assignee_id === user.id).map(([k]) => k);
@@ -229,7 +230,6 @@ async function handle(req: Request): Promise<Response> {
       if (!data?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
       const k = String(data.lead_key || key), mine = handOf(hands.current, k, data.linked_plan);
       const planKey = data.linked_plan ? "P:" + data.linked_plan : null;
-      if (sr && mine?.assignee_id !== user.id) return reply({ error: NOT_YOURS }, 403);
       return reply({
         user: me, ...data, assignment: mine ?? null,
         assign_history: hands.history.filter((h) => h.lead_key === k || h.lead_key === planKey),

@@ -308,6 +308,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const FIRST_DAY = "2026-10-09";
   const VIEWS = [
     ["leads", "Lead", '<path d="M4 6h16M4 12h16M4 18h10"/>'],
+    ["mine", "งานของฉัน", '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'],
     ["tracking", "ติดตามสถานะ", '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z"/>'],
     ["assign", "สรุปมอบหมายงาน", '<circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 11l2 2 4-4"/>'],
     ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
@@ -376,7 +377,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       state.user = data.user;
       if (state.as && !data.user.viewing_as) { state.as = null; try { sessionStorage.removeItem("kg-as"); } catch (e) { /* this tab only */ } }
       if (data.user.admin && !state.as) state.realAdmin = true;
-      document.getElementById("who").textContent = `${data.user.name} · ${state.as ? "ดูอย่างเดียว" : data.user.sr ? "เห็นเฉพาะงานที่ได้รับมอบหมาย" : EDITORS.includes(data.user.role) ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+      document.getElementById("who").textContent = `${data.user.name} · ${state.as ? "ดูอย่างเดียว" : data.user.sr ? "อัปเดตสถานะได้เฉพาะงานที่ได้รับมอบหมาย" : EDITORS.includes(data.user.role) ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
     }
     if (data.sales) state.sales = data.sales;
     renderAsView();
@@ -397,7 +398,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   setInterval(() => { if (pingView && document.visibilityState === "visible") ping(pingView, false); }, 60000);
   document.addEventListener("visibilitychange", () => { if (pingView && document.visibilityState === "visible") ping(pingView, false); });
 
-  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", assign: "สรุปมอบหมายงาน", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
+  const VIEW_NAME = { leads: "Lead", mine: "งานของฉัน", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", assign: "สรุปมอบหมายงาน", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
   let usageTimer = null;
   async function usagePage(quiet) {
     if (!quiet) main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
@@ -465,17 +466,21 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     mine: null, board: null, sales: [], as: (() => { try { return Number(sessionStorage.getItem("kg-as")) || null; } catch (e) { return null; } })(),
     realAdmin: false, srInit: false, a: { pick: null },
     l: { type: "np", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 },
+    m: { type: "all", score: "all", method: "all", status: "all", asg: "all", q: "", sort: "deadline", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
     r: { q: "", score: "all", method: "all", shown: 100, open: null },
     o: { score: "all", method: "all" },
   };
   const per = () => state.per[currentView] || state.per.leads;
   const mayEdit = () => !!state.user && EDITORS.includes(state.user.role) && !state.as;
-  // A Sale (role sale, not DV / Tele) sees only the leads handed to them: งานของฉัน, ติดตามสถานะ, คู่มือ.
+  // A Sale (role sale, not DV / Tele) sees Lead like the DV, but updates a status only on the leads handed to
+  // them (27 Nov 2026, evening): Lead, งานของฉัน, ติดตามสถานะ (their own), คู่มือ.
   const isSR = () => !!(state.user && state.user.sr);
+  const isMineRow = r => !isSR() || (!!state.user && r.assignee_id === state.user.id);
+  const mayEditRow = r => mayEdit() && isMineRow(r);
   const canAssign = () => !!(state.user && state.user.can_assign) && !state.as;
   const seesBoard = () => !!state.user && !state.user.sr && state.user.role !== "viewer";
-  const SR_VIEWS = ["leads", "tracking", "guide"];
+  const SR_VIEWS = ["leads", "mine", "tracking", "guide"];
   // ภาพรวม is hidden from the team for now (27 Nov 2026), not removed: take it out of this list to bring it back
   const ADMIN_VIEWS = ["overview", "usage"];
   // who has the lead now, on every list this page holds (after handing it out or taking it back)
@@ -487,7 +492,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     }));
     state.board = null; state.tracking = null;
   }
-  const handPill = r => r.assignee && !isSR() ? `<span class="pill who" title="${esc(`มอบโดย ${r.assigned_by} · ${thTime(r.assigned_at)}`)}">👤 ${esc(r.assignee)}</span>` : "";
+  const handPill = r => r.assignee && currentView !== "mine" ? `<span class="pill who" title="${esc(`มอบโดย ${r.assigned_by} · ${thTime(r.assigned_at)}`)}">👤 ${esc(r.assignee)}</span>` : "";
   const salesOptions = id => `<option value="">— ยังไม่มอบหมาย —</option>` + state.sales.map(x => `<option value="${x.id}" ${id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("");
   const assignBar = r => `<div class="abar"><label>มอบให้ <select data-assign="${esc(r.lead_key)}" aria-label="มอบหมายให้">${salesOptions(r.assignee_id)}</select></label>
     ${r.assigned_by ? `<span>มอบโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span>` : ""}<span class="amsg" aria-live="polite"></span></div>`;
@@ -520,6 +525,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       try { if (state.as) sessionStorage.setItem("kg-as", String(state.as)); else sessionStorage.removeItem("kg-as"); } catch (e) { /* this tab only */ }
       Object.assign(state, { user: null, cache: {}, leads: null, outcomes: null, tracking: null, mine: null, board: null, srInit: false });
       state.l = { type: "np", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 };
+      state.m = { type: "all", score: "all", method: "all", status: "all", asg: "all", q: "", sort: "deadline", shown: 60 };
       state.area = "target";
       if (hashParams().get("v") === "leads" && !hashParams().get("lead")) route(); else location.hash = href({ v: "leads" });
     };
@@ -527,7 +533,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   // A D0 whose bid day has passed and nobody gave it a status: a lead we let go by.
   const closed = r => !!(r.awarded || r.result || r.cancelled);
   // what the card's button says: update, record after the result (bid / no bid only), or just view
-  const actLabel = r => !mayEdit() ? "ดูรายละเอียด" : !closed(r) ? "อัปเดตสถานะ" : r.cancelled ? "ดูรายละเอียด" : "บันทึกย้อนหลัง";
+  const actLabel = r => !mayEditRow(r) ? "ดูรายละเอียด" : !closed(r) ? "อัปเดตสถานะ" : r.cancelled ? "ดูรายละเอียด" : "บันทึกย้อนหลัง";
   const missed = r => !r.status && r.type === "D0" && !r.cancelled && daysTo(r.bid_date) !== null && daysTo(r.bid_date) < 0;
   // One status per lead, first match wins: cancelled, then what someone pressed, then a bid day that passed
   // with nobody pressing anything, else no status yet. The Lead filters count each lead once.
@@ -575,16 +581,16 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const c = state.cache[key] || (state.cache[key] = {});
     const retry = name => e => { if (state.cache[key] === c) delete c[name]; throw e; };
     if (!c.pl) c.pl = api("leads", { from, to }).then(l => (c.leads = groupLeads(l.rows || []))).catch(retry("pl"));
-    if (!c.po) c.po = api("outcomes", { from, to }).then(o => (c.outcomes = (o.rows || []).filter(inScope))).catch(retry("po"));
-    c.pl.catch(() => {}); c.po.catch(() => {});   // no "unhandled" noise for the list nobody waits on
+    if (!c.po && !isSR()) c.po = api("outcomes", { from, to }).then(o => (c.outcomes = (o.rows || []).filter(inScope))).catch(retry("po"));
+    c.pl.catch(() => {}); if (c.po) c.po.catch(() => {});   // no "unhandled" noise for the list nobody waits on
     const [l, o] = await Promise.all([need.includes("leads") ? c.pl : null, need.includes("outcomes") ? c.po : null]);
     if (l) state.leads = l;
     if (o) state.outcomes = o;
   }
 
-  // a Sale's Lead list: every lead handed to them, whatever its email day
+  // a Sale's งานของฉัน: every lead handed to them, whatever its email day
   async function ensureMine() {
-    if (!state.mine) state.mine = groupLeads((await api("leads", { from: FIRST_DAY, to: todayISO() })).rows || []);
+    if (!state.mine) state.mine = groupLeads((await api("leads", { mine: true })).rows || []);
     state.leads = state.mine;
   }
   // the มอบหมายงาน tab: every lead someone has now, with its status and result
@@ -617,9 +623,9 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
 
   // ---------------- layout pieces ----------------
   function renderNav(view) {
-    const shown = k => isSR() ? SR_VIEWS.includes(k) : ADMIN_VIEWS.includes(k) ? !!(state.user && state.user.admin) : k === "assign" ? seesBoard() : true;
+    const shown = k => isSR() ? SR_VIEWS.includes(k) : k === "mine" ? false : ADMIN_VIEWS.includes(k) ? !!(state.user && state.user.admin) : k === "assign" ? seesBoard() : true;
     document.getElementById("nav").innerHTML = VIEWS.filter(([k]) => shown(k)).map(([k, label, icon]) =>
-      `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${k === "leads" && isSR() ? "งานของฉัน" : label}</a>`).join("");
+      `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${label}</a>`).join("");
   }
 
   function toolbar({ period = true, area = true } = {}) {
@@ -682,7 +688,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const left = r.type === "D0" ? daysTo(r.bid_date) : null;
     const when = r.type === "P0" ? (r.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(r.expected_month))}</span>` : "")
       : r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${r.bid_time ? " " + esc(r.bid_time) : ""}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : left !== null && left < 0 ? " · ปิดแล้ว" : ""}</span>` : "";
-    const canEdit = mayEdit() && !closed(r);
+    const canEdit = mayEditRow(r) && !closed(r);
     const trail = r.stages && r.stages.length > 1
       ? `<span>${r.stages.map(x => `${esc(TYPE[x.type] || x.type)} ${esc(thDate(x.pub_date))}`).join(" → ")}</span>`
       : `<span>ประกาศ ${esc(thDate(r.pub_date))}</span>`;
@@ -693,7 +699,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
           ${r.amended && !r.cancelled ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
         <div class="title">${esc(r.title)}</div>
         <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}${trail}</div>
-        ${isSR() && r.assigned_by ? `<div class="meta"><span>มอบหมายโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span></div>` : ""}
+        ${currentView === "mine" && r.assigned_by ? `<div class="meta"><span>มอบหมายโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span></div>` : ""}
       </div>
       <div class="money"><span class="label">${r.type === "P0" ? "งบตามแผน" : "งบประมาณ"}</span>
         <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
@@ -795,11 +801,11 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     newest: ["ประกาศล่าสุด", (a, b) => String(b.pub_date).localeCompare(String(a.pub_date)) || b.score - a.score] };
 
   function leadsPage(body, redraw) {
-    const L = state.l;
+    const M = currentView === "mine", L = M ? state.m : state.l;
     // a project whose winner is announced is no longer a lead: it shows only under "ประกาศผู้ชนะแล้ว" (or ทุกสถานะ)
     // มอบหมาย (DV / Tele / admin): every other count follows it; its own buttons count the rest
-    const area0 = state.leads.filter(areaOk), af = (ASG_FILTERS.find(f => f[0] === L.asg) || ASG_FILTERS[0])[2];
-    const area = isSR() ? area0 : area0.filter(af);
+    const area0 = M ? state.leads : state.leads.filter(areaOk), af = (ASG_FILTERS.find(f => f[0] === L.asg) || ASG_FILTERS[0])[2];
+    const area = M ? area0 : area0.filter(af);
     const sf = STATUS_FILTERS.find(f => f[0] === L.status)[2];
     const q = L.q.trim().toLowerCase();
     // each button counts what pressing it would show, with the other rows as they are
@@ -809,18 +815,18 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const rows = area.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).sort(SORTS[L.sort][1]);
     const picked = [L.type !== "all" && TYPE_FILTERS.find(f => f[0] === L.type)[1], L.method !== "all" && METHOD_FILTERS.find(f => f[0] === L.method)[1],
       L.score !== "all" && SCORE_FILTERS.find(f => f[0] === L.score)[1],
-      L.status !== "all" && STATUS_FILTERS.find(f => f[0] === L.status)[1], !isSR() && L.asg !== "all" && ASG_FILTERS.find(f => f[0] === L.asg)[1],
+      L.status !== "all" && STATUS_FILTERS.find(f => f[0] === L.status)[1], !M && L.asg !== "all" && ASG_FILTERS.find(f => f[0] === L.asg)[1],
       q && `“${L.q.trim()}”`].filter(Boolean);
     // a Sale's summary of their own work
-    const open = isSR() ? state.leads.filter(r => !closed(r) && !["bid", "no_bid"].includes(r.status)) : [];
-    const srTop = !isSR() ? "" : `<div class="kpis">
+    const open = M ? state.leads.filter(r => !closed(r) && !["bid", "no_bid"].includes(r.status)) : [];
+    const srTop = !M ? "" : `<div class="kpis">
         <div class="kpi"><span class="label">งานที่ได้รับมอบหมาย</span><span class="value">${state.leads.length}</span><span class="sub">งบรวม ${short(sum(state.leads, "budget_thb"))}</span></div>
         <div class="kpi alert"><span class="label">ยังไม่กดรับเรื่อง</span><span class="value">${open.filter(r => !r.status).length}</span><span class="sub">กด “รับเรื่อง” เมื่อเริ่มงาน</span></div>
         <div class="kpi"><span class="label">กำลังทำ</span><span class="value">${open.filter(r => r.status).length}</span><span class="sub">ยังไม่ได้กดยื่น / ไม่ยื่น</span></div>
         <div class="kpi"><span class="label">ใกล้ปิดรับซอง (7 วัน)</span><span class="value">${open.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date))).length}</span><span class="sub">ประกาศเชิญชวนที่ยังไม่ยื่น</span></div>
       </div>`;
     const card = r => canAssign() ? `<div class="lwrap">${leadCard(r)}${assignBar(r)}</div>` : leadCard(r);
-    const none = isSR() ? (state.leads.length ? "ไม่มีงานตามตัวกรองนี้" : "ยังไม่มีงานที่ได้รับมอบหมาย · เมื่อ DV มอบหมายงานให้ จะขึ้นที่หน้านี้")
+    const none = M ? (state.leads.length ? "ไม่มีงานตามตัวกรองนี้" : "ยังไม่มีงานที่ได้รับมอบหมาย · เมื่อ DV มอบหมายงานให้ จะขึ้นที่หน้านี้")
       : "ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่";
     body.innerHTML = `${srTop}
       <div class="card">
@@ -832,7 +838,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
         ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
         ${frow("สถานะ", STATUS_FILTERS.filter(([k]) => !HIDDEN_STATUS.includes(k) || L.status === k).map(([k, l, f]) =>
           `<button class="chip" type="button" data-status="${k}" aria-pressed="${L.status === k}">${l}<span class="n">${area.filter(byType).filter(byScore).filter(byMethod).filter(byText).filter(f).length}</span></button>`).join(""))}
-        ${isSR() ? "" : frow("มอบหมาย", ASG_FILTERS.map(([k, l, f]) =>
+        ${M ? "" : frow("มอบหมาย", ASG_FILTERS.map(([k, l, f]) =>
           `<button class="chip" type="button" data-asg="${k}" aria-pressed="${L.asg === k}">${l}<span class="n">${area0.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(f).length}</span></button>`).join(""))}
         <div class="toolrow">
           <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อ หน่วยงาน เลขโครงการ/แผน" value="${esc(L.q)}" aria-label="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด เลขโครงการ หรือเลขแผน">
@@ -910,7 +916,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
         <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
         ${num(r.bid_price) !== null ? `<span class="small muted">ราคาที่ยื่น ${baht(r.bid_price)}</span>` : ""}
         ${r.winner_price && r.result ? `<span class="small muted">ราคาที่ชนะ ${baht(r.winner_price)}</span>` : ""}
-        <span class="act btn sm ${mayEdit() && !closed(r) ? "primary" : ""}">${actLabel(r)}</span></div></a>`; };
+        <span class="act btn sm ${mayEditRow(r) && !closed(r) ? "primary" : ""}">${actLabel(r)}</span></div></a>`; };
     body.innerHTML = `
       <div class="card">
         <div class="chips" role="group" aria-label="ขั้น">${STAGES.map(([k, l, f]) =>
@@ -1107,8 +1113,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   function guide() {
     main.innerHTML = `<div class="grid2">
       <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
-        ${isSR() ? `<dt>งานของฉัน</dt><dd>งานที่ DV / Tele มอบหมายให้คุณ ทุกงานไม่จำกัดวันที่ เรียงตามวันยื่นซองที่ใกล้ที่สุด กดงานเพื่อเปิดหน้าโครงการแล้วกด “รับเรื่อง” และอัปเดตสถานะตามขั้นตอน · ถ้าเปิดงานที่ไม่ได้มอบให้คุณ ระบบจะแจ้งให้ติดต่อ DV</dd>`
-        : `<dt>Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: เดือนนี้ ทั้งหมดยกเว้นแผนจัดซื้อ ยังไม่มีสถานะ${canAssign() ? " · ช่อง “มอบให้” ใต้แต่ละโครงการ: เลือก GXX แล้วกด “ยืนยัน”" : ""}</dd>`}
+        <dt>Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด ${isSR() ? "กดรายการเพื่อดูรายละเอียด · อัปเดตสถานะได้เฉพาะงานที่ DV / Tele มอบหมายให้คุณ (ป้าย 👤 บอกว่างานนั้นมอบให้ใครแล้ว)" : "กดรายการเพื่ออัปเดตสถานะ"} · เริ่มต้น: เดือนนี้ ทั้งหมดยกเว้นแผนจัดซื้อ ยังไม่มีสถานะ${canAssign() ? " · ช่อง “มอบให้” ใต้แต่ละโครงการ: เลือก GXX แล้วกด “ยืนยัน”" : ""}</dd>
+        ${isSR() ? `<dt>งานของฉัน</dt><dd>งานที่ DV / Tele มอบหมายให้คุณ ทุกงานไม่จำกัดวันที่ เรียงตามวันยื่นซองที่ใกล้ที่สุด กดงานเพื่อเปิดหน้าโครงการแล้วกด “รับเรื่อง” และอัปเดตสถานะตามขั้นตอน</dd>` : ""}
         <dt>ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
         ${seesBoard() ? `<dt>สรุปมอบหมายงาน</dt><dd>งานที่มอบหมายในช่วงเวลาที่เลือก (นับตามวันที่มอบ) แยกราย GXX และรายผู้มอบหมาย: ได้รับ มูลค่า ยังไม่รับเรื่อง กำลังทำ ยื่น ไม่ยื่น ชนะ และ ⚠️ ค้าง (ยังไม่กดรับเรื่องเกิน 2 วันหลังมอบ หรือใกล้ปิดรับซอง 3 วันแต่ยังไม่ได้กดยื่น / ไม่ยื่น) กดตัวเลขเพื่อดูรายการ · เริ่มต้น: เดือนนี้</dd>` : ""}
         ${isSR() ? "" : `<dt>ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด ของงานแข่งขัน (e-bidding, e-market, คัดเลือก ฯลฯ) และงานที่เคยเป็น Lead ไม่รวมงานเฉพาะเจาะจงที่ไม่เคยเป็น Lead กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
@@ -1169,9 +1175,12 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
 
   function renderLead() {
     const { data } = current;
-    const anns = data.announcements, s = leadSummary(anns), isDV = EDITORS.includes(data.user.role) && !state.as;
     const asg = data.assignment, hist = data.assign_history || [];
-    const asgCard = isSR() ? (asg ? `<div class="card"><h2>การมอบหมาย</h2><div class="small">มอบหมายให้คุณโดย <b>${esc(asg.assigned_by)}</b> · ${esc(thTime(asg.assigned_at))}</div></div>` : "")
+    const notMine = isSR() && !(asg && asg.assignee_id === data.user.id);
+    const anns = data.announcements, s = leadSummary(anns), isDV = EDITORS.includes(data.user.role) && !state.as && !notMine;
+    const asgCard = isSR() ? `<div class="card"><h2>การมอบหมาย</h2><div class="small">${!asg ? "ยังไม่มอบหมาย"
+        : !notMine ? `มอบหมายให้คุณโดย <b>${esc(asg.assigned_by)}</b> · ${esc(thTime(asg.assigned_at))}`
+        : `มอบหมายให้ <b>${esc(asg.assignee)}</b> โดย ${esc(asg.assigned_by)} · ${esc(thTime(asg.assigned_at))}`}</div></div>`
       : `<div class="card"><h2>มอบหมายงาน</h2>
         ${canAssign() ? `<div class="toolrow"><label class="daterow">มอบให้ <select id="asg-sel" aria-label="มอบหมายให้">${salesOptions(asg ? asg.assignee_id : null)}</select></label></div><div class="msg" id="asg-msg" aria-live="polite"></div>`
           : `<div class="small">${asg ? `มอบหมายให้ <b>${esc(asg.assignee)}</b> โดย ${esc(asg.assigned_by)} · ${esc(thTime(asg.assigned_at))}` : "ยังไม่มอบหมาย"}</div>`}
@@ -1196,7 +1205,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
     const groups = retro ? [["บันทึกหลังประกาศผล", ["bid", "no_bid"]]] : GROUPS;
     const emk = methodGroup(anns.map(a => a.method).find(Boolean)) === "emarket" && !anns.some(a => a.type === "D0");
-    const form = isDV && locked && !retro ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">โครงการนี้ถูกยกเลิกแล้ว จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
+    const form = notMine && !state.as ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">${asg ? "งานนี้มอบหมายให้คนอื่นแล้ว" : "งานนี้ยังไม่ได้มอบหมายให้คุณ"} · อัปเดตสถานะได้เมื่อ DV / Tele มอบหมายงานนี้ให้คุณ</div></div>`
+      : isDV && locked && !retro ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">โครงการนี้ถูกยกเลิกแล้ว จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
       : isDV ? `<div class="card" id="form"><h2>${retro ? "บันทึกย้อนหลัง" : "อัปเดตสถานะ"}</h2>
         ${retro ? '<div class="small muted">ประกาศผู้ชนะแล้ว ถ้ายื่นราคาไปแล้วหรือตัดสินใจไม่ยื่นแต่ยังไม่ได้กด บันทึกได้ที่นี่ (ผลจะเปลี่ยนจาก “บริษัทอื่นชนะ” เป็น “แพ้” เมื่อบันทึกว่ายื่นแล้ว)</div>' : ""}
         ${groups.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="chips">${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}</div></div>`).join("")}
@@ -1308,19 +1318,19 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
         try { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
         catch (e) { /* showLead below shows the error */ }
       }
-      renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from"));
+      // a lead link from the hand-out email has no "from": a Sale goes back to งานของฉัน
+      const from = p.get("from") || (isSR() ? "mine" : null);
+      renderNav(from || "leads"); ping("lead", true); return showLead(lead, from);
     }
     currentView = view;
     renderNav(view);
     try {
       if (!state.days.length || !state.user) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
     } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
-    // a Sale has งานของฉัน, ติดตามสถานะ and คู่มือ; มอบหมายงาน is for DV / Tele / the admin
-    if ((isSR() && !SR_VIEWS.includes(view)) || (view === "assign" && !seesBoard()) || (view === "overview" && !(state.user && state.user.admin))) {
+    // a Sale has Lead, งานของฉัน, ติดตามสถานะ and คู่มือ; มอบหมายงาน is for DV / Tele / the admin
+    if ((isSR() && !SR_VIEWS.includes(view)) || (view === "mine" && !isSR()) || (view === "assign" && !seesBoard()) || (view === "overview" && !(state.user && state.user.admin))) {
       view = "leads"; currentView = view; history.replaceState(null, "", href({ v: view }));
     }
-    // a Sale's list starts with all of their work, nearest bid day first
-    if (isSR() && !state.srInit) { state.srInit = true; state.area = "all"; Object.assign(state.l, { type: "all", score: "all", method: "all", status: "all", asg: "all", sort: "deadline", shown: 60 }); }
     renderNav(view);  // now the account is known (the usage tab shows for admins only)
     ping(view, true);
     const sync = state.per[p.get("sync")];
@@ -1333,7 +1343,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     if (view === "usage") { currentView = "usage"; return usagePage(); }
     if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
     if (view === "assign") return page(view, assignPage, { load: ensureBoard, area: false });
-    if (view === "leads" && isSR()) return page(view, leadsPage, { load: ensureMine, bar: false });
+    // งานของฉัน: all of a Sale's work, every area, nearest bid day first
+    if (view === "mine") return page(view, leadsPage, { load: ensureMine, bar: false });
     const build = { overview, leads: leadsPage, results }[view];
     const need = { leads: ["leads"], results: ["outcomes"] }[view];   // ภาพรวม uses both
     return page(view, build, { load: () => ensureRange(need) });
