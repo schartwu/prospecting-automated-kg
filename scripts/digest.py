@@ -282,64 +282,6 @@ def style_sheet(ws, number_cols=frozenset(), wrap_cols=None):
 
 SENDER_NAME = "KG Lead (e-GP Alert)"  # shown instead of the bare sender address
 
-UNHELD_DAYS = 3  # bids closing today .. in 3 days
-UNHELD_MIN_SCORE = 75  # our main goods and IT / furniture (SCORE_BANDS); lower scores would bury them
-UNHELD_SHOWN = 15
-
-
-def unheld_leads(db: DB, today, targets: set[str], min_score: int = UNHELD_MIN_SCORE):
-    """Invitations (D0) closing within UNHELD_DAYS that nobody holds: not handed to a Sale and no status
-    pressed yet, in Sales' provinces (or no province). Shown to DV / Tele so no lead slips past its
-    deadline unworked (phase 2, 27 Nov 2026)."""
-    rows = db.rpc("web_list", {"p_kind": "leads", "p_from": (today - timedelta(days=60)).isoformat(),
-                               "p_to": today.isoformat()}) or []
-    held = {}
-    for h in db.select("lead_assignments", select="lead_key,assignee_id", order="assigned_at.asc,id.asc"):
-        held[h["lead_key"]] = h["assignee_id"]
-    rank = {"P0": 0, "B0": 1, "15": 2, "D0": 3}
-    latest = {}
-    for r in rows:  # one row per lead: its latest announcement, as on the web app
-        k = r["lead_key"]
-        if k not in latest or rank.get(r["type"], -1) > rank.get(latest[k]["type"], -1):
-            latest[k] = r
-    out = []
-    for r in latest.values():
-        left = days_left(r, today)
-        if (r["type"] != "D0" or left is None or not 0 <= left <= UNHELD_DAYS or (r.get("score") or 0) < min_score
-                or r.get("status") or r.get("awarded") or r.get("result") or r.get("cancelled")
-                or (r.get("province") and r["province"] not in targets)
-                or held.get(r["lead_key"]) or (r.get("linked_plan") and held.get(f"P:{r['linked_plan']}"))):
-            continue
-        out.append(r)
-    return sorted(out, key=lambda r: (days_left(r, today), -(r.get("score") or 0)))
-
-
-def unheld_html(rows, today, app_link):
-    """The warning box on top of a DV / Tele copy, or "" when every closing bid has someone on it."""
-    if not rows:
-        return ""
-    items = []
-    for r in rows[:UNHELD_SHOWN]:
-        left = days_left(r, today)
-        link = update_button(app_link(r["lead_key"]), "เปิดเพื่อมอบหมาย") if app_link else ""
-        items.append(
-            "<tr style='border-top:1px solid #f3d19c;vertical-align:top'>"
-            f"<td><b>{r.get('score')}</b></td>"
-            f"<td>{html.escape(r.get('title') or '')}<div style='color:#888;font-size:12px'>"
-            f"{html.escape(r.get('dept_name') or '')}</div>{link}</td>"
-            f"<td style='text-align:right;white-space:nowrap'>{fmt_money(r.get('budget_thb'))}</td>"
-            f"<td style='white-space:nowrap'>{bid_cell(r, today)}</td></tr>")
-    return ('<div style="background:#fff7e6;border:1px solid #f3d19c;border-radius:8px;padding:10px 12px;margin:12px 0">'
-            f'<b style="color:#b45309">⚠️ ใกล้ปิดรับซองภายใน {UNHELD_DAYS} วัน แต่ยังไม่มีใครดูแล ({len(rows)})</b>'
-            f'<div style="color:#666;font-size:13px;margin:2px 0 6px">ประกาศเชิญชวนคะแนน {UNHELD_MIN_SCORE} ขึ้นไป ที่ยังไม่ได้มอบหมายให้ GXX และยังไม่มีใครกดสถานะ '
-            '· มอบหมาย หรือกด “ไม่ยื่น” ถ้าไม่ทำ</div>'
-            '<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%">'
-            '<tr style="text-align:left"><th>คะแนน</th><th>โครงการ</th><th style="white-space:nowrap">งบ (บาท)</th>'
-            '<th style="white-space:nowrap">วันยื่นซอง</th></tr>' + "".join(items) + "</table>"
-            + (f'<div style="color:#666;font-size:12px">แสดง {UNHELD_SHOWN} งานที่ปิดซองเร็วที่สุด จาก {len(rows)} งาน · '
-               'ดูทั้งหมดในเว็บ KG Lead แท็บ Lead ตัวกรอง “ยังไม่มอบหมาย”</div>' if len(rows) > UNHELD_SHOWN else "")
-            + "</div>")
-
 
 def send(subject, html_body, attachment, recipients, sender_name=None):
     """sender_name is the name shown instead of the bare address (the address itself stays visible)."""
@@ -382,21 +324,11 @@ def main():
     out = os.path.join(ROOT, "out")
     os.makedirs(out, exist_ok=True)
 
-    unheld = None
-
-    def make(suffix: str = "", token: str | None = None, label: str = UPDATE, warn: bool = False):
-        """With the reader's token: a button on every lead (label) and a link to the web app, no Excel.
-        warn: a DV / Tele copy, which starts with the bids closing soon that nobody holds."""
-        nonlocal unheld
+    def make(suffix: str = "", token: str | None = None, label: str = UPDATE):
+        """With the reader's token: a button on every lead (label) and a link to the web app, no Excel."""
         app_link = (lambda key: f"{LEAD_APP_URL}#t={token}&lead={quote(key)}") if token else None
         body, rows, elsewhere = build(db, since, now, args.min_score, targets, app_link=app_link, label=label,
                                       board_link=f"{LEAD_APP_URL}#t={token}" if token else None)
-        if warn:
-            if unheld is None:
-                unheld = unheld_leads(db, now.date(), targets)
-            box = unheld_html(unheld, now.date(), app_link)
-            cut = body.index("<h3")  # after the heading block, before the first list
-            body = body[:cut] + box + body[cut:]
         xlsx = os.path.join(out, f"eGP_Alert_{now:%Y%m%d}{suffix}.xlsx")
         write_xlsx(rows, xlsx, elsewhere)
         if not token:  # out/ is uploaded as a run artifact of this public repository; personal links stay out
@@ -426,9 +358,10 @@ def main():
     def send_personal(to, prefix, suffix):
         for i, email in enumerate(to):
             token = token_of(email)
-            body, rows, xlsx = make(suffix=f"{suffix}{i}", token=token, warn=token is not None)
+            body, rows, xlsx = make(suffix=f"{suffix}{i}", token=token)
             if token is None:
-                print(f"::warning::{email} is not a Lead Loop user; sent without web links")
+                # Actions logs of this public repository are public: no addresses
+                print(f"::warning::recipient {i + 1} is not a Lead Loop user; sent without web links")
             send(subject(rows, prefix), body, None if token else xlsx, [email], sender_name=SENDER_NAME)
         print(f"{prefix.strip() or 'personal copies'} sent to {len(to)} recipient(s)")
 
