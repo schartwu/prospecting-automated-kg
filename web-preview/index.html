@@ -1211,6 +1211,9 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
             ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
         </div>
         <div class="side" style="display:grid;gap:14px">
+          <div class="card"><div class="small">หากไม่พบข้อมูลคุณลักษณะสินค้า หรือ TOR ให้นำ${current.key.startsWith("P:")
+            ? `เลขโครงการ (เมื่อมีประกาศ)` : `เลขโครงการ <b>${esc(current.key)}</b>`} ไปค้นหาใน
+            <a href="https://www.gprocurement.go.th/new_index.html" target="_blank" rel="noopener noreferrer">https://www.gprocurement.go.th/new_index.html</a></div></div>
           <div class="card"><h2>ประกาศของโครงการนี้</h2><div>${anns.map(a => `<div class="ann">
             <div class="small muted">${esc(TYPE[a.type] || a.type)} · ประกาศ ${esc(thDate(a.pub_date))}</div>
             <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a>
