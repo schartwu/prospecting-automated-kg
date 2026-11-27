@@ -57,7 +57,7 @@ def pending(db):
 
 def lead_rows(db, keys):
     """key -> the lead's latest announcement (as on the web app), its budget the project's."""
-    rows = db.rpc("web_list_keys", {"p_keys": keys}) or []
+    rows = db.rpc("web_list_keys_v2", {"p_keys": keys}) or []
     best = {}
     for r in rows:
         for k in {r["lead_key"], f"P:{r['linked_plan']}" if r.get("linked_plan") else None} & set(keys):
