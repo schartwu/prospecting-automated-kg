@@ -92,7 +92,7 @@ def bid_cell(r, today):
         return f"<span style='color:#666;font-size:12px'>คาดว่าประกาศ</span><br>{expected}" if expected else "-"
     left = days_left(r, today)
     when = datetime.fromisoformat(r["bid_date"]).strftime("%d/%m")
-    time_ = f" {r['bid_time']}" if r.get("bid_time") else ""
+    time_ = f" {html.escape(str(r['bid_time']))}" if r.get("bid_time") else ""
     color = "#c00" if left <= 3 else "#333"
     note = "ผ่านไปแล้ว" if left < 0 else ("วันนี้" if left == 0 else f"อีก {left} วัน")
     return f"{when}{time_}<div style='color:{color};font-size:12px'><b>{note}</b></div>"
@@ -360,16 +360,19 @@ def main():
             token = token_of(email)
             body, rows, xlsx = make(suffix=f"{suffix}{i}", token=token)
             if token is None:
-                print(f"::warning::{email} is not a Lead Loop user; sent without web links")
+                # Actions logs of this public repository are public: no addresses
+                print(f"::warning::recipient {i + 1} is not a Lead Loop user; sent without web links")
             send(subject(rows, prefix), body, None if token else xlsx, [email], sender_name=SENDER_NAME)
         print(f"{prefix.strip() or 'personal copies'} sent to {len(to)} recipient(s)")
 
     def editors():
-        """Everyone who updates leads (DV and Sales), from the KG Lead user list."""
-        rows = db.select("lead_users", select="email", role="in.(dv,sale)", active="eq.true", order="id")
-        return [r["email"] for r in rows]
+        """Everyone who picks leads: DV and Tele (role dv, or role sale that can hand leads out). A Sale (GXX)
+        no longer gets the list of every lead (27 Nov 2026): they get the leads handed to them instead
+        (scripts/assign_notify.py), and their link opens only those."""
+        rows = db.select("lead_users", select="email,role,can_assign", role="in.(dv,sale)", active="eq.true", order="id")
+        return [r["email"] for r in rows if r["role"] == "dv" or r["can_assign"]]
 
-    # LOOP_RECIPIENTS: "all" = every active DV/Sale gets their own copy; otherwise only the addresses listed
+    # LOOP_RECIPIENTS: "all" = every active DV / Tele gets their own copy; otherwise only the addresses listed
     # (while trying things out).
     loop_value = (os.environ.get("LOOP_RECIPIENTS") or "").strip()
     loop_to = editors() if loop_value.lower() == "all" else emails(loop_value)
@@ -400,7 +403,7 @@ def main():
     db.insert("digests", {"kind": "daily", "since": since.isoformat(), "n_items": len(rows),
                           "recipients": ",".join(recipients)}, returning=False)
     print(f"sent to {len(recipients)} recipient(s)")
-    if loop_to:  # every day: each DV/Sale their own copy with the "อัปเดตสถานะ" buttons
+    if loop_to:  # every day: each DV / Tele their own copy with the "อัปเดตสถานะ" buttons
         send_personal(loop_to, "", "_personal")
 
 
