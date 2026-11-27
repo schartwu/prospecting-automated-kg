@@ -495,6 +495,20 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const assignBar = r => `<div class="abar"><label>มอบให้ <select data-assign="${esc(r.lead_key)}" aria-label="มอบหมายให้">${salesOptions(r.assignee_id)}</select></label>
     <button class="btn sm" type="button" data-copy="${esc(r.lead_key)}">📋 คัดลอกลิงก์</button>
     ${r.assigned_by ? `<span>มอบโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span>` : ""}<span class="amsg" aria-live="polite"></span></div>`;
+  // Picking a name in "มอบให้" saves nothing yet: the person confirms first, in case the wrong name was picked.
+  function askHand(sel, m, cls, was, save) {
+    const before = was ? String(was) : "";
+    if (sel.value === before) { m.className = cls; m.textContent = ""; return; }
+    m.className = cls;
+    m.innerHTML = `${sel.value ? `มอบให้ <b>${esc(sel.selectedOptions[0].textContent)}</b>` : "ยกเลิกการมอบหมาย"} ใช่ไหม?
+      <button class="btn sm primary" type="button" data-ok>ยืนยัน</button> <button class="btn sm" type="button" data-no>ยกเลิก</button>`;
+    m.querySelector("[data-no]").onclick = () => { sel.value = before; m.textContent = ""; };
+    m.querySelector("[data-ok]").onclick = async () => {
+      sel.disabled = true; m.textContent = "กำลังบันทึก…";
+      try { await save(sel.value ? Number(sel.value) : null); }
+      catch (e) { sel.disabled = false; m.className = cls + " err"; m.textContent = e.message; }
+    };
+  }
   // the admin's "ดูในมุมมองของ": read only, until switched back
   function renderAsView() {
     const sel = document.getElementById("asview"), bar = document.getElementById("asbar");
@@ -835,11 +849,11 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     body.querySelectorAll("[data-status]").forEach(b => b.onclick = () => { L.status = b.dataset.status; L.shown = 60; leadsPage(body, redraw); });
     body.querySelectorAll("[data-asg]").forEach(b => b.onclick = () => { L.asg = b.dataset.asg; L.shown = 60; leadsPage(body, redraw); });
     body.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyLead(rows.find(r => r.lead_key === b.dataset.copy), b));
-    body.querySelectorAll("[data-assign]").forEach(sel => sel.onchange = async () => {
-      const key = sel.dataset.assign, m = sel.closest(".abar").querySelector(".amsg");
-      sel.disabled = true; m.className = "amsg"; m.textContent = "กำลังบันทึก…";
-      try { const res = await api("assign", { key, assignee_id: sel.value ? Number(sel.value) : null }); applyHand(key, res.assignment); leadsPage(body, redraw); }
-      catch (e) { sel.disabled = false; m.className = "amsg err"; m.textContent = e.message; }
+    body.querySelectorAll("[data-assign]").forEach(sel => sel.onchange = () => {
+      const key = sel.dataset.assign, r = rows.find(x => x.lead_key === key);
+      askHand(sel, sel.closest(".abar").querySelector(".amsg"), "amsg", r && r.assignee_id, async to => {
+        const res = await api("assign", { key, assignee_id: to }); applyHand(key, res.assignment); leadsPage(body, redraw);
+      });
     });
     document.getElementById("sort").onchange = e => { L.sort = e.target.value; leadsPage(body, redraw); };
     document.getElementById("ftog").onclick = () => { L.fopen = !L.fopen; leadsPage(body, redraw); };
@@ -1219,17 +1233,13 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     if (asel) {
       document.getElementById("asg-copy").onclick = e => copyLead({ title: s.main.title, dept_name: s.main.dept_name, budget_thb: s.budget,
         bid_date: s.d0 && s.d0.bid_date, bid_time: s.d0 && s.d0.bid_time, lead_key: current.key }, e.currentTarget);
-      asel.onchange = async () => {
-        const m = document.getElementById("asg-msg");
-        asel.disabled = true; m.className = "msg"; m.textContent = "กำลังบันทึก…";
-        try {
-          const res = await api("assign", { key: current.key, assignee_id: asel.value ? Number(asel.value) : null });
-          Object.assign(current.data, { assignment: res.assignment, assign_history: res.assign_history });
-          applyHand(current.key, res.assignment);
-          renderLead();
-          const m2 = document.getElementById("asg-msg"); m2.className = "msg ok"; m2.textContent = res.assignment ? `มอบหมายให้ ${res.assignment.assignee} แล้ว` : "ยกเลิกการมอบหมายแล้ว";
-        } catch (e) { asel.disabled = false; m.className = "msg err"; m.textContent = e.message; }
-      };
+      asel.onchange = () => askHand(asel, document.getElementById("asg-msg"), "msg", asg && asg.assignee_id, async to => {
+        const res = await api("assign", { key: current.key, assignee_id: to });
+        Object.assign(current.data, { assignment: res.assignment, assign_history: res.assign_history });
+        applyHand(current.key, res.assignment);
+        renderLead();
+        const m2 = document.getElementById("asg-msg"); m2.className = "msg ok"; m2.textContent = res.assignment ? `มอบหมายให้ ${res.assignment.assignee} แล้ว` : "ยกเลิกการมอบหมายแล้ว";
+      });
     }
     if (!isDV || (locked && !retro)) return;
     const f = document.getElementById("form");
