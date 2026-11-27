@@ -283,9 +283,11 @@ def style_sheet(ws, number_cols=frozenset(), wrap_cols=None):
 SENDER_NAME = "KG Lead (e-GP Alert)"  # shown instead of the bare sender address
 
 UNHELD_DAYS = 3  # bids closing today .. in 3 days
+UNHELD_MIN_SCORE = 75  # our main goods and IT / furniture (SCORE_BANDS); lower scores would bury them
+UNHELD_SHOWN = 15
 
 
-def unheld_leads(db: DB, today, targets: set[str], min_score: int):
+def unheld_leads(db: DB, today, targets: set[str], min_score: int = UNHELD_MIN_SCORE):
     """Invitations (D0) closing within UNHELD_DAYS that nobody holds: not handed to a Sale and no status
     pressed yet, in Sales' provinces (or no province). Shown to DV / Tele so no lead slips past its
     deadline unworked (phase 2, 27 Nov 2026)."""
@@ -317,7 +319,7 @@ def unheld_html(rows, today, app_link):
     if not rows:
         return ""
     items = []
-    for r in rows:
+    for r in rows[:UNHELD_SHOWN]:
         left = days_left(r, today)
         link = update_button(app_link(r["lead_key"]), "เปิดเพื่อมอบหมาย") if app_link else ""
         items.append(
@@ -329,11 +331,14 @@ def unheld_html(rows, today, app_link):
             f"<td style='white-space:nowrap'>{bid_cell(r, today)}</td></tr>")
     return ('<div style="background:#fff7e6;border:1px solid #f3d19c;border-radius:8px;padding:10px 12px;margin:12px 0">'
             f'<b style="color:#b45309">⚠️ ใกล้ปิดรับซองภายใน {UNHELD_DAYS} วัน แต่ยังไม่มีใครดูแล ({len(rows)})</b>'
-            '<div style="color:#666;font-size:13px;margin:2px 0 6px">ประกาศเชิญชวนที่ยังไม่ได้มอบหมายให้ GXX และยังไม่มีใครกดสถานะ '
+            f'<div style="color:#666;font-size:13px;margin:2px 0 6px">ประกาศเชิญชวนคะแนน {UNHELD_MIN_SCORE} ขึ้นไป ที่ยังไม่ได้มอบหมายให้ GXX และยังไม่มีใครกดสถานะ '
             '· มอบหมาย หรือกด “ไม่ยื่น” ถ้าไม่ทำ</div>'
             '<table cellpadding="6" style="border-collapse:collapse;font-size:13px;width:100%">'
             '<tr style="text-align:left"><th>คะแนน</th><th>โครงการ</th><th style="white-space:nowrap">งบ (บาท)</th>'
-            '<th style="white-space:nowrap">วันยื่นซอง</th></tr>' + "".join(items) + "</table></div>")
+            '<th style="white-space:nowrap">วันยื่นซอง</th></tr>' + "".join(items) + "</table>"
+            + (f'<div style="color:#666;font-size:12px">แสดง {UNHELD_SHOWN} งานที่ปิดซองเร็วที่สุด จาก {len(rows)} งาน · '
+               'ดูทั้งหมดในเว็บ KG Lead แท็บ Lead ตัวกรอง “ยังไม่มอบหมาย”</div>' if len(rows) > UNHELD_SHOWN else "")
+            + "</div>")
 
 
 def send(subject, html_body, attachment, recipients, sender_name=None):
@@ -388,7 +393,7 @@ def main():
                                       board_link=f"{LEAD_APP_URL}#t={token}" if token else None)
         if warn:
             if unheld is None:
-                unheld = unheld_leads(db, now.date(), targets, args.min_score)
+                unheld = unheld_leads(db, now.date(), targets)
             box = unheld_html(unheld, now.date(), app_link)
             cut = body.index("<h3")  # after the heading block, before the first list
             body = body[:cut] + box + body[cut:]
