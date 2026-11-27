@@ -342,6 +342,11 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
   const inScope = o => !!(o.lead_types && o.lead_types.length) || !isSpecific(o.method);
   const inMethod = (k, r) => k === "all" || methodGroup(r.method) === k;
   const methodPill = m => m ? `<span class="pill" title="${esc(m)}">${esc(methodShort(m))}</span>` : "";
+  // e-GP's RSS feed carries no ประกาศเชิญชวน for e-market (none ever, only ราคากลาง and ผู้ชนะ; checked 27 Nov
+  // 2026), so an e-market lead never shows its bid day here: a label sends the reader to e-GP for it.
+  const EMARKET_NOTE = "e-GP ไม่ส่งประกาศเชิญชวนของวิธี e-market มาให้ระบบ จึงไม่มีวันยื่นซองในหน้านี้ ให้นำเลขโครงการไปค้นหาใน e-GP เพื่อดูวันยื่นซองและเอกสาร";
+  const noInvite = r => methodGroup(r.method) === "emarket" && r.type !== "D0";
+  const emarketPill = r => noInvite(r) && !closed(r) ? `<span class="pill st" title="${EMARKET_NOTE}">ดูวันยื่นซองใน e-GP</span>` : "";
   // W2 changed the winner, W1 withdrew it (back to waiting for the result)
   const changePill = r => !r.award_changed && !r.changed ? ""
     : r.withdrawn || (r.award_changed && !r.awarded) ? '<span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ รอประกาศใหม่</span>'
@@ -562,14 +567,19 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     else if (p !== "custom") { target.to = end; target.from = addDays(end, -(Number(p) - 1)); }
   }
 
-  async function ensureRange() {
+  // Both lists of a period start loading together, once; a page waits only for the list it shows (the Lead
+  // tab does not wait for the slower results list, which keeps loading for the next tab). A list that
+  // failed is asked for again the next time a page needs it.
+  async function ensureRange(need = ["leads", "outcomes"]) {
     const { from, to } = per(), key = `${from}|${to}`;
-    if (!state.cache[key]) {
-      const [l, o] = await Promise.all([api("leads", { from, to }), api("outcomes", { from, to })]);
-      if (l.sales) state.sales = l.sales;
-      state.cache[key] = { leads: groupLeads(l.rows || []), outcomes: (o.rows || []).filter(inScope) };
-    }
-    ({ leads: state.leads, outcomes: state.outcomes } = state.cache[key]);
+    const c = state.cache[key] || (state.cache[key] = {});
+    const retry = name => e => { if (state.cache[key] === c) delete c[name]; throw e; };
+    if (!c.pl) c.pl = api("leads", { from, to }).then(l => (c.leads = groupLeads(l.rows || []))).catch(retry("pl"));
+    if (!c.po) c.po = api("outcomes", { from, to }).then(o => (c.outcomes = (o.rows || []).filter(inScope))).catch(retry("po"));
+    c.pl.catch(() => {}); c.po.catch(() => {});   // no "unhandled" noise for the list nobody waits on
+    const [l, o] = await Promise.all([need.includes("leads") ? c.pl : null, need.includes("outcomes") ? c.po : null]);
+    if (l) state.leads = l;
+    if (o) state.outcomes = o;
   }
 
   // a Sale's Lead list: every lead handed to them, whatever its email day
@@ -678,7 +688,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       : `<span>ประกาศ ${esc(thDate(r.pub_date))}</span>`;
     return `<a class="lead" href="${href({ lead: r.lead_key, from: currentView })}">
       <div style="display:grid;gap:5px;min-width:0">
-        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${leadPill(r)}${resultPill(r.result)}${changePill(r)}${handPill(r)}
+        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${leadPill(r)}${resultPill(r.result)}${changePill(r)}${handPill(r)}${emarketPill(r)}
           ${r.linked_plan && r.type !== "P0" ? `<span class="pill" title="หน่วยงานเดียวกันและงบเท่ากันพอดี">🔗 จับคู่กับแผน ${esc(r.linked_plan)}</span>` : ""}
           ${r.amended && !r.cancelled ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
         <div class="title">${esc(r.title)}</div>
@@ -1185,6 +1195,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     const awardDay = awarded ? aw.pub_date : null;
     const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
     const groups = retro ? [["บันทึกหลังประกาศผล", ["bid", "no_bid"]]] : GROUPS;
+    const emk = methodGroup(anns.map(a => a.method).find(Boolean)) === "emarket" && !anns.some(a => a.type === "D0");
     const form = isDV && locked && !retro ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">โครงการนี้ถูกยกเลิกแล้ว จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
       : isDV ? `<div class="card" id="form"><h2>${retro ? "บันทึกย้อนหลัง" : "อัปเดตสถานะ"}</h2>
         ${retro ? '<div class="small muted">ประกาศผู้ชนะแล้ว ถ้ายื่นราคาไปแล้วหรือตัดสินใจไม่ยื่นแต่ยังไม่ได้กด บันทึกได้ที่นี่ (ผลจะเปลี่ยนจาก “บริษัทอื่นชนะ” เป็น “แพ้” เมื่อบันทึกว่ายื่นแล้ว)</div>' : ""}
@@ -1198,7 +1209,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
       <div><a href="${href({ v: current.from })}">← กลับ</a></div>
       <div class="card hero">
         <div style="display:grid;gap:6px;min-width:0">
-          <div class="chips"><span class="pill type">${esc(TYPE[s.main.type] || s.main.type)}</span>${!last && awarded ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(last && last.status)}${outcome}</div>
+          <div class="chips"><span class="pill type">${esc(TYPE[s.main.type] || s.main.type)}</span>${!last && awarded ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(last && last.status)}${outcome}${emk && !locked ? `<span class="pill st" title="${EMARKET_NOTE}">ดูวันยื่นซองใน e-GP</span>` : ""}</div>
           <h1>${esc(s.main.title)}</h1>
           <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span>
             ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · ${dueText(s.d0.bid_date)}` : ""}</span>` : ""}
@@ -1214,7 +1225,7 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
             ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
         </div>
         <div class="side" style="display:grid;gap:14px">
-          <div class="card"><div class="small">หากไม่พบข้อมูลคุณลักษณะสินค้า หรือ TOR ให้นำ${current.key.startsWith("P:")
+          <div class="card"><div class="small">${emk ? `<div style="margin-bottom:6px"><b>โครงการ e-market:</b> ${EMARKET_NOTE}</div>` : ""}หากไม่พบข้อมูลคุณลักษณะสินค้า หรือ TOR ให้นำ${current.key.startsWith("P:")
             ? `เลขโครงการ (เมื่อมีประกาศ)` : `เลขโครงการ <b>${esc(current.key)}</b>`} ไปค้นหาใน
             <a href="https://www.gprocurement.go.th/new_index.html" target="_blank" rel="noopener noreferrer">https://www.gprocurement.go.th/new_index.html</a></div></div>
           <div class="card"><h2>ประกาศของโครงการนี้</h2><div>${anns.map(a => `<div class="ann">
@@ -1324,7 +1335,8 @@ button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
     if (view === "assign") return page(view, assignPage, { load: ensureBoard, area: false });
     if (view === "leads" && isSR()) return page(view, leadsPage, { load: ensureMine, bar: false });
     const build = { overview, leads: leadsPage, results }[view];
-    return page(view, build, { load: ensureRange });
+    const need = { leads: ["leads"], results: ["outcomes"] }[view];   // ภาพรวม uses both
+    return page(view, build, { load: () => ensureRange(need) });
   }
   addEventListener("hashchange", route);
   route();

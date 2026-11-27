@@ -47,8 +47,10 @@ const CORS = {
 
 // The API hands back at most 1,000 rows per call (PostgREST max rows), so each list comes back from
 // web_list() as one JSON array. Without it, "ทั้งหมด" in ผลลัพธ์ stopped at 1,000 of 1,386 rows.
+// The *_v2 functions (web_list_v2, web_list_keys_v2, lead_detail_v2; migration 20261127000005) give the same
+// rows as web_list / web_list_keys / lead_detail, faster: plan_links is read from plan_links_cache.
 async function allRows(kind: string, args: Record<string, unknown> = {}) {
-  const { data, error } = await db.rpc("web_list", { p_kind: kind, ...args });
+  const { data, error } = await db.rpc("web_list_v2", { p_kind: kind, ...args });
   return { data: (data ?? []) as unknown[], error };
 }
 
@@ -103,7 +105,20 @@ function withHand(rows: unknown[], current: Map<string, Current>) {
   });
 }
 
-Deno.serve(async (req) => {
+// A month of leads is a few MB of Thai text: sent gzipped (about a tenth) when the browser accepts it.
+async function gzipped(req: Request, res: Response) {
+  if (!/\bgzip\b/.test(req.headers.get("accept-encoding") ?? "") || res.headers.has("content-encoding") || !res.body) return res;
+  const text = await res.text();
+  if (text.length < 4096) return new Response(text, { status: res.status, headers: res.headers });
+  const headers = new Headers(res.headers);
+  headers.set("Content-Encoding", "gzip");
+  headers.set("Vary", "Accept-Encoding");
+  return new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip")), { status: res.status, headers });
+}
+
+Deno.serve(async (req) => gzipped(req, await handle(req)));
+
+async function handle(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return reply({ error: "ใช้ POST เท่านั้น" }, 405);
 
@@ -163,15 +178,14 @@ Deno.serve(async (req) => {
     case "items":
     case "leads":
     case "outcomes": {
-      const hands = await handOuts();
-      if (!hands) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
-      const extra = canAssign ? { sales: hands.sales } : {};
       if (sr) {
         // a Sale's Lead list: every lead handed to them, whatever its email day
         if (body.action !== "leads") return reply({ error: "หน้านี้สำหรับ DV" }, 403);
+        const hands = await handOuts();
+        if (!hands) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
         const keys = [...hands.current].filter(([, c]) => c.assignee_id === user.id).map(([k]) => k);
         if (!keys.length) return reply({ user: me, provinces: PROVINCES, rows: [] });
-        const { data, error } = await db.rpc("web_list_keys", { p_keys: keys });
+        const { data, error } = await db.rpc("web_list_keys_v2", { p_keys: keys });
         if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
         return reply({ user: me, provinces: PROVINCES, rows: withHand((data ?? []) as unknown[], hands.current) });
       }
@@ -179,8 +193,10 @@ Deno.serve(async (req) => {
       const from = String(body.from ?? ""), to = String(body.to ?? "");
       const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d));
       if (!ok(from) || !ok(to) || from > to) return reply({ error: "เลือกช่วงวันที่ให้ถูกต้อง" }, 400);
-      const { data, error } = await allRows(body.action as string, { p_from: from, p_to: to });
-      if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+      // the list and who holds each lead, read at the same time
+      const [hands, { data, error }] = await Promise.all([handOuts(), allRows(body.action as string, { p_from: from, p_to: to })]);
+      if (error || !hands) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+      const extra = canAssign ? { sales: hands.sales } : {};
       return reply({ user: me, provinces: PROVINCES, rows: withHand(data, hands.current), ...extra });
     }
 
@@ -208,7 +224,7 @@ Deno.serve(async (req) => {
     case "lead": {
       const key = String(body.key ?? "");
       if (!/^(P:)?[A-Z0-9]{8,20}$/.test(key)) return reply({ error: "ไม่พบ Lead นี้" }, 404);
-      const [{ data, error }, hands] = await Promise.all([db.rpc("lead_detail", { p_key: key }), handOuts()]);
+      const [{ data, error }, hands] = await Promise.all([db.rpc("lead_detail_v2", { p_key: key }), handOuts()]);
       if (error || !hands) return reply({ error: "โหลด Lead ไม่สำเร็จ" }, 500);
       if (!data?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
       const k = String(data.lead_key || key), mine = handOf(hands.current, k, data.linked_plan);
@@ -226,7 +242,7 @@ Deno.serve(async (req) => {
       const key = String(body.key ?? "");
       if (!/^(P:)?[A-Z0-9]{8,20}$/.test(key)) return reply({ error: "ไม่พบ Lead นี้" }, 404);
       const to = body.assignee_id === null || body.assignee_id === "" || body.assignee_id === undefined ? null : Number(body.assignee_id);
-      const [{ data: lead, error }, hands] = await Promise.all([db.rpc("lead_detail", { p_key: key }), handOuts()]);
+      const [{ data: lead, error }, hands] = await Promise.all([db.rpc("lead_detail_v2", { p_key: key }), handOuts()]);
       if (error || !hands) return reply({ error: "มอบหมายไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
       if (!lead?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
       if (to !== null && !hands.sales.some((s) => s.id === to)) return reply({ error: "เลือก GXX ที่จะมอบหมาย" }, 400);
@@ -248,12 +264,13 @@ Deno.serve(async (req) => {
     case "assignments": {
       // the มอบหมายงาน tab: who has which lead now, with the lead's status and result
       if (sr || user.role === "viewer") return reply({ error: "หน้านี้สำหรับ DV" }, 403);
+      const tracking = allRows("tracking");   // starts now, while the hand-outs load
       const hands = await handOuts();
       if (!hands) return reply({ error: "โหลดข้อมูลการมอบหมายไม่สำเร็จ" }, 500);
       const keys = [...hands.current.keys()];
       const [{ data, error }, tr] = await Promise.all([
-        keys.length ? db.rpc("web_list_keys", { p_keys: keys }) : Promise.resolve({ data: [], error: null }),
-        allRows("tracking"),
+        keys.length ? db.rpc("web_list_keys_v2", { p_keys: keys }) : Promise.resolve({ data: [], error: null }),
+        tracking,
       ]);
       if (error || tr.error) return reply({ error: "โหลดข้อมูลการมอบหมายไม่สำเร็จ" }, 500);
       // the no-bid reasons of the latest status, from ติดตามสถานะ
@@ -277,7 +294,7 @@ Deno.serve(async (req) => {
       if (status === "other" && !note) return reply({ error: "สถานะ “อื่น ๆ” ต้องใส่หมายเหตุ" }, 400);
       if (price !== null && !(Number.isFinite(price) && price >= 0 && price < 1e13)) return reply({ error: "ราคาที่ยื่นต้องเป็นตัวเลข" }, 400);
       // The same locks as the web page, so an old tab or a hand-made request cannot save past them.
-      const { data: lead, error: leadError } = await db.rpc("lead_detail", { p_key: key });
+      const { data: lead, error: leadError } = await db.rpc("lead_detail_v2", { p_key: key });
       if (leadError) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
       const anns: { type: string; project_no: string | null }[] = lead?.announcements ?? [];
       if (!anns.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
@@ -301,11 +318,11 @@ Deno.serve(async (req) => {
         bid_price: status === "bid" ? price : null, note: note || null, user_id: user.id,
       });
       if (error) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
-      const { data } = await db.rpc("lead_detail", { p_key: key });
+      const { data } = await db.rpc("lead_detail_v2", { p_key: key });
       return reply({ saved: true, events: data?.events ?? [] });
     }
 
     default:
       return reply({ error: "ไม่รู้จักคำสั่งนี้" }, 400);
   }
-});
+}
