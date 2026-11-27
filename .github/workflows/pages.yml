@@ -5,7 +5,7 @@ name: Lead web app
 on:
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/pages.yml"]
+    paths: ["web/**", "web-preview/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -33,6 +33,12 @@ jobs:
           cp -r web/. _site/
           # The function URL is kept out of the repository and written in at deploy time.
           printf 'window.EGP_API = "%s/functions/v1/lead";\n' "${SUPABASE_URL%/}" > _site/config.js
+          # UAT (test) page at /preview/: the next version of the page, calling the function `lead-preview`.
+          if [ -d web-preview ]; then
+            mkdir _site/preview
+            cp -r web-preview/. _site/preview/
+            printf 'window.EGP_API = "%s/functions/v1/lead-preview";\n' "${SUPABASE_URL%/}" > _site/preview/config.js
+          fi
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

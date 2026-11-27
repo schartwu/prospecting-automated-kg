@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>KG Lead (UAT)</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap">
+<!-- config.js is written at deploy time (.github/workflows/pages.yml): window.EGP_API = "<function url>" -->
+<script src="config.js"></script>
+<!-- SheetJS, only for the "ดาวน์โหลด Excel" buttons -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+<style>
+/* KG Lead. Pages: ภาพรวม (what needs attention, how we are doing), Lead (opportunities: plans, draft TORs,
+   reference prices, invitations), ติดตามสถานะ (leads someone has acted on, by stage), ผลลัพธ์ (who won),
+   คู่มือ. A lead opens its own page (status + history). Personal links: #t=<token>[&v=<page>][&lead=<key>]. */
+:root {
+  --bg: #f2f4f5; --surface: #ffffff; --ink: #15212a; --muted: #5d6c75; --line: #d9dfe3; --soft: #eef1f3;
+  --accent: #0b6e69; --accent-soft: #dcefed; --on-accent: #ffffff;
+  --money: #0b4f4b;
+  --good: #1f7a3a; --good-soft: #def2e3; --warn: #93600a; --warn-soft: #fbefd2; --bad: #b3261e; --bad-soft: #fbe1df;
+  --font: "Kanit", Tahoma, "Leelawadee UI", sans-serif;
+  --nav-h: 0px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0e161b; --surface: #16212a; --ink: #e6edf0; --muted: #98a9b2; --line: #2a3943; --soft: #1c2a33;
+  --accent: #4cc2b9; --accent-soft: #143836; --on-accent: #0e161b;
+  --money: #7fdad2;
+  --good: #6fd08a; --good-soft: #16321e; --warn: #e6b65a; --warn-soft: #352910; --bad: #f08a83; --bad-soft: #3a1b19;
+  color-scheme: dark; } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-weight: 300; font-size: 15px; line-height: 1.55;
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
+b, strong { font-weight: 500; }
+a { color: var(--accent); }
+button, input, select, textarea { font-family: var(--font); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* app bar + navigation */
+.appbar { position: sticky; top: 0; z-index: 20; background: var(--surface); border-bottom: 1px solid var(--line); }
+.appbar .in { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; gap: 18px; min-height: 56px; }
+.brand { font-size: 22px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; }
+.brand span { color: var(--accent); }
+.nav { display: flex; gap: 2px; flex: 1; }
+.nav a { display: inline-flex; align-items: center; gap: 6px; padding: 16px 12px 13px; color: var(--muted); text-decoration: none;
+  font-weight: 400; border-bottom: 3px solid transparent; white-space: nowrap; }
+.nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+.nav svg { width: 18px; height: 18px; }
+.who { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 820px) {
+  :root { --nav-h: 62px; }
+  .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; background: var(--surface); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom, 0px); justify-content: space-around; }
+  .nav a { flex-direction: column; gap: 0; padding: 8px 2px 6px; font-size: 11.5px; border-bottom: 0; border-top: 3px solid transparent; flex: 1; justify-content: center; }
+  .nav a[aria-current="page"] { border-top-color: var(--accent); }
+  .nav svg { width: 22px; height: 22px; }
+  .appbar .in { justify-content: space-between; }
+}
+
+/* One spacing rhythm: 16px between page sections, 10px inside them. minmax(0, 1fr) keeps wide content
+   (tables, the status board) from stretching the page past the screen; it scrolls inside its own box. */
+main { max-width: 1180px; margin: 0 auto; padding-block: 16px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+#body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+h1 { font-size: 22px; font-weight: 500; margin: 0; line-height: 1.3; text-wrap: balance; }
+h2 { font-size: 18px; font-weight: 500; margin: 0; }
+h3 { font-size: 15px; font-weight: 500; margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* toolbar: period + area */
+.toolbar { display: grid; gap: 10px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--soft); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: var(--ink); font-size: 13.5px; font-weight: 400; padding: 5px 11px; border-radius: 8px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--accent); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.toolrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.daterow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+input[type="date"], input.txt, select, textarea { font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+input.txt { min-width: 0; flex: 1 1 240px; }
+textarea { width: 100%; resize: vertical; }
+.period-label { font-size: 13px; color: var(--muted); }
+
+.btn { font-size: 14px; font-weight: 400; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.btn.sm { font-size: 13px; padding: 3px 10px; }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.frow { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
+.frow > .flabel { font-size: 13px; color: var(--muted); padding-top: 6px; }
+.filters, .frows { display: grid; gap: 10px; }
+.gcol { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.ftoggle { display: none; }
+@media (max-width: 640px) {
+  .frow { grid-template-columns: 1fr; gap: 4px; } .frow > .flabel { padding-top: 0; }
+  .ftoggle { display: flex; justify-content: space-between; gap: 8px; width: 100%; text-align: left; }
+  .filters:not(.open) { display: none; }
+}
+.chip { font-size: 13px; font-weight: 400; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+.chip.reason[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.chip .n { color: var(--muted); margin-left: 2px; }
+
+/* KPI tiles */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+@media (max-width: 640px) { .kpis { grid-template-columns: 1fr 1fr; } .kpi .value { font-size: 24px; } .kpi { padding: 10px 12px; } }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; text-decoration: none; color: inherit; }
+a.kpi:hover { border-color: var(--accent); }
+.kpi .label { font-size: 13px; color: var(--muted); }
+.kpi .value { font-size: 28px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.kpi.win { border-color: var(--good); }
+tr.warn td { background: var(--bad-soft); }
+tr.total td { font-weight: 500; border-top: 2px solid var(--line); }
+.tbl.split table { table-layout: fixed; width: 100%; }
+.tbl.plans { margin-bottom: 10px; }
+.who-by { font-weight: 500; color: var(--ink); }
+button.kpi { font: inherit; text-align: left; cursor: pointer; }
+button.kpi:hover { border-color: var(--accent); }
+button.kpi[aria-expanded="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.kpi .hint { font-size: 12px; color: var(--accent); margin-top: 2px; }
+.card.detail { border-color: var(--accent); }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--soft); }
+tr.clickable[aria-expanded="true"] td { background: var(--accent-soft); }
+tr.sub td { background: var(--soft); }
+.kpi.win .value { color: var(--good); }
+.kpi.alert .value { color: var(--warn); }
+
+/* lead cards */
+.list { display: grid; gap: 8px; }
+.lead { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 8px 16px; color: inherit; text-decoration: none; }
+.lead:hover { border-color: var(--accent); }
+.lead .badges { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.lead .title { font-size: 15.5px; font-weight: 400; line-height: 1.45; }
+.lead .money { text-align: right; display: grid; align-content: start; gap: 2px; }
+.lead .money .label { font-size: 12px; color: var(--muted); }
+.lead .money .amt { font-size: 22px; font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.lead .money .amt.none { font-size: 14px; font-weight: 300; color: var(--muted); }
+.lead .money .act { margin-top: 6px; justify-self: end; }
+.meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 400; padding: 1px 9px;
+  border-radius: 999px; white-space: nowrap; background: var(--soft); color: var(--muted); }
+.pill.type { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.pill.st { background: var(--warn-soft); color: var(--warn); }
+.pill.done { background: var(--accent-soft); color: var(--accent); }
+.pill.win { background: var(--good-soft); color: var(--good); font-weight: 500; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.score { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 22px; padding: 0 6px;
+  border-radius: 6px; font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.score.s90 { background: var(--good-soft); color: var(--good); }
+.score.s75 { background: var(--accent-soft); color: var(--accent); }
+.score.s60 { background: var(--warn-soft); color: var(--warn); }
+.score.s50 { background: var(--soft); color: var(--muted); }
+.urgent { color: var(--bad); font-weight: 500; }
+@media (max-width: 640px) {
+  .lead { grid-template-columns: 1fr; }
+  .lead .money { text-align: left; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; }
+  .lead .money .act { margin-top: 0; }
+}
+
+/* overview: two lists side by side, progress and types stacked in the third column */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 16px; align-items: start; }
+.grid2 > * { min-width: 0; }
+.ov { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.ov .stack { display: grid; gap: 16px; min-width: 0; }
+@media (max-width: 1080px) { .ov { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ov .stack { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+@media (max-width: 700px) { .ov, .ov .stack { grid-template-columns: minmax(0, 1fr); } }
+.mini { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 9px 0; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.mini:last-child { border-bottom: 0; }
+.mini:hover .t { color: var(--accent); }
+.mini .t { font-size: 14.5px; }
+.mini .amt { font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; text-align: right; }
+.funnel { display: grid; gap: 7px; }
+.fbar { display: grid; grid-template-columns: 120px 1fr 60px; gap: 10px; align-items: center; font-size: 14px; }
+.fbar .track { background: var(--soft); border-radius: 5px; height: 16px; overflow: hidden; }
+.fbar .fill { height: 100%; background: var(--accent); border-radius: 5px; min-width: 2px; }
+.fbar .fill.win { background: var(--good); }
+.fbar .n { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* tracking board */
+.board { display: grid; grid-template-columns: repeat(6, minmax(170px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 6px; min-width: 0; }
+.col { background: var(--soft); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; min-height: 120px; }
+.col h3 { display: flex; justify-content: space-between; font-size: 14px; }
+.tcard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; display: grid; gap: 4px;
+  color: inherit; text-decoration: none; }
+.tcard:hover { border-color: var(--accent); }
+.tcard .t { font-size: 14px; line-height: 1.4; }
+.tcard .amt { font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; }
+.colpick { display: none; }
+@media (max-width: 820px) {
+  .board { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .colpick { display: flex; }
+  .col:not(.on) { display: none; }
+}
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--soft); white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl th.c, .tbl td.c { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl tr.dim td { color: var(--muted); }
+.tbl th.grp { text-align: center; border-bottom: 1px solid var(--line); }
+td.num.money { color: var(--money); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+
+/* lead page */
+.two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 820px) { .two { grid-template-columns: 1fr; } .two .side { order: -1; } }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 20px; align-items: start; }
+.hero .amt { font-size: 30px; font-weight: 500; color: var(--money); font-variant-numeric: tabular-nums; line-height: 1.15; text-align: right; }
+.hero .amt-label { text-align: right; }
+@media (max-width: 640px) { .hero { grid-template-columns: 1fr; } .hero .amt, .hero .amt-label { text-align: left; } }
+.group { display: grid; gap: 6px; }
+.group > span { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.msg { font-size: 14px; min-height: 1.4em; }
+.msg.ok { color: var(--good); } .msg.err { color: var(--bad); }
+.timeline { display: grid; gap: 9px; border-left: 2px solid var(--line); padding-left: 12px; }
+.timeline .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ann { display: grid; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.ann:last-child { border-bottom: 0; padding-bottom: 0; }
+.legend dt { font-weight: 500; }
+.legend dd { margin: 0 0 8px; color: var(--muted); }
+.empty { padding: 26px 16px; text-align: center; color: var(--muted); }
+.error { border-color: var(--bad); color: var(--bad); }
+.skeleton { height: 64px; border-radius: 12px; background: linear-gradient(90deg, var(--soft), var(--surface), var(--soft)); background-size: 200% 100%; }
+@media (prefers-reduced-motion: no-preference) { .skeleton { animation: sh 1.2s infinite linear; } @keyframes sh { to { background-position: -200% 0; } } }
+.uat { background: #f59e0b; color: #1f1300; text-align: center; font-weight: 700; font-size: 13px; padding: 6px 12px; }
+</style>
+</head>
+<body>
+<div class="uat" role="note">🧪 หน้าทดลอง (UAT) ไม่ใช่ระบบจริง · ข้อมูลที่บันทึกที่นี่ลงฐานข้อมูลจริง</div>
+<div class="appbar"><div class="in gutter">
+  <div class="brand">KG <span>Lead</span></div>
+  <nav class="nav" id="nav" aria-label="เมนูหลัก"></nav>
+  <span class="who" id="who"></span>
+</div></div>
+<main class="gutter" id="main"><div class="card empty">กำลังโหลด…</div></main>
+
+<script>
+(() => {
+  // ---------------- vocabulary ----------------
+  const STATUS = { received: "👀 รับเรื่อง", contacted: "🤝 ติดต่อ/เข้าพบหน่วยงาน", sent_to_mer: "📦 ส่งให้ Mer",
+    mer_replied: "💬 Mer ตอบแล้ว", bid: "✅ ยื่นราคาแล้ว", no_bid: "❌ ไม่ยื่น", other: "📝 อื่น ๆ" };
+  const GROUPS = [["กำลังทำ", ["received", "contacted", "sent_to_mer", "mer_replied"]], ["ตัดสินใจ", ["bid", "no_bid"]], ["อื่น ๆ", ["other"]]];
+  const REASONS = ["ไม่ใช่สินค้าเรา", "Spec ล็อกยี่ห้อ", "ราคาสู้ไม่ได้", "อื่น ๆ"];
+  // The order e-GP publishes them: plan, draft TOR, reference price, invitation, then changes and results.
+  // An array, because objects list the numeric key "15" first.
+  const TYPE_ORDER = ["P0", "B0", "15", "D0", "D2", "D1", "W0", "W2", "W1"];
+  const TYPE = { P0: "แผนจัดซื้อ", B0: "ร่าง TOR", "15": "ราคากลาง", D0: "ประกาศเชิญชวน", D2: "แก้ไขประกาศเชิญชวน",
+    D1: "ยกเลิกประกาศ", W0: "ประกาศผู้ชนะ", W2: "เปลี่ยนแปลงผู้ชนะ", W1: "ยกเลิกประกาศผู้ชนะ" };
+  const TYPE_MEANING = {
+    P0: "แผนประจำปี รู้ล่วงหน้าหลายเดือน ใช้วางแผนเข้าพบหน่วยงาน", B0: "ร่างเอกสาร ประกาศจริงตามมาราว 5 วัน ให้เตรียมสินค้า",
+    "15": "บอกงบประมาณ ส่วนใหญ่ออกวันเดียวกับประกาศเชิญชวน", D0: "เปิดให้ยื่นราคาแล้ว ดูวันยื่นซอง",
+    D2: "หน่วยงานแก้ไขประกาศเชิญชวน เช่น เลื่อนวันยื่นซอง (ดึงทุกวันศุกร์)",
+    D1: "หน่วยงานยกเลิกโครงการ ปิดการอัปเดตสถานะ",
+    W0: "ใครชนะ ราคาเท่าไร ใช้ดูคู่แข่ง", W2: "หน่วยงานเปลี่ยนผู้ชนะ ระบบใช้ผู้ชนะใหม่แทน (ดึงทุกวันศุกร์)",
+    W1: "หน่วยงานยกเลิกผู้ชนะ โครงการกลับไปรอผล อัปเดตสถานะได้อีกครั้ง (ดึงทุกวันศุกร์)" };
+  const STATUS_MEANING = {
+    received: "เห็น Lead แล้ว กำลังดูว่าจะไปต่อไหม", contacted: "โทร คุย หรือเข้าพบฝ่ายพัสดุ / ผู้ใช้งานของหน่วยงานแล้ว",
+    sent_to_mer: "ส่งรายการสินค้าหรือ Spec ให้ Mer ขอราคาและเช็กสินค้า", mer_replied: "ได้ราคาหรือข้อมูลสินค้าจาก Mer แล้ว",
+    bid: "ยื่นซองในระบบ e-GP แล้ว (ใส่ราคาที่ยื่นได้)", no_bid: "ตัดสินใจไม่ยื่น ต้องเลือกเหตุผล", other: "กรณีอื่น ต้องเขียนหมายเหตุ" };
+  const EDITORS = ["dv", "sale"];           // dv = Division Manager, sale = his team; viewer = monitor, read only
+  const ROLE = { dv: "DV", sale: "Sale", viewer: "Monitor" };
+  const RESULT = { win: ["🏆 OfficeMate ชนะ", "win"], lost: ["แพ้", "bad"], other_won: ["บริษัทอื่นชนะ", "bad"] };
+  const FIRST_DAY = "2026-10-09";
+  const VIEWS = [
+    ["leads", "Lead", '<path d="M4 6h16M4 12h16M4 18h10"/>'],
+    ["tracking", "ติดตามสถานะ", '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z"/>'],
+    ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
+    ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
+    ["guide", "คู่มือ", '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5"/>'],
+    ["usage", "การใช้งาน", '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M21 20a6 6 0 0 0-4-5.6"/>'],
+  ];
+
+  // ---------------- helpers ----------------
+  const main = document.getElementById("main");
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const num = v => v === null || v === undefined || v === "" ? null : Number(v);
+  const money = v => num(v) === null ? "–" : num(v).toLocaleString("th-TH", { maximumFractionDigits: 0 });
+  const baht = v => num(v) === null ? "–" : "฿" + money(v);
+  const short = v => { const n = num(v); if (n === null) return "–"; if (n >= 1e6) return "฿" + (n / 1e6).toLocaleString("th-TH", { maximumFractionDigits: 1 }) + " ล้าน"; return baht(n); };
+  const thDate = d => d ? new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" }) : "–";
+  const thTime = d => new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const todayISO = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+  const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const daysTo = d => d ? Math.round((new Date(d + "T00:00:00Z") - new Date(todayISO() + "T00:00:00Z")) / 864e5) : null;
+  const monthLabel = m => { if (!m) return ""; const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("th-TH", { month: "short", year: "numeric" }); };
+  const isOurs = w => !!w && /ออฟฟิศ\s*เมท/.test(w.replace(/ํา/g, "ำ"));
+  const scoreBadge = s => `<span class="score s${s >= 90 ? 90 : s >= 75 ? 75 : s >= 60 ? 60 : 50}" title="คะแนนความตรงกับสินค้า OfficeMate">${s}</span>`;
+  // วิธีจัดหา: a short badge, and three groups for the filters (plans carry no method: อื่น ๆ)
+  const methodShort = m => !m ? "" : /e-bidding/i.test(m) ? "e-bidding" : /e-market/i.test(m) ? "e-market"
+    : /เฉพาะเจาะจง/.test(m) ? "เฉพาะเจาะจง" : /คัดเลือก/.test(m) ? "คัดเลือก" : /สอบราคา/.test(m) ? "สอบราคา" : m;
+  const methodGroup = m => !m ? "other" : /e-bidding/i.test(m) ? "ebid" : /e-market/i.test(m) ? "emarket" : "other";
+  const METHOD_FILTERS = [["all", "ทุกวิธี"], ["ebid", "e-bidding"], ["emarket", "e-market"], ["other", "อื่น ๆ"]];
+  // KG Lead shows competitive work and what came from a Lead (decided 2 Nov 2026). A เฉพาะเจาะจง award is
+  // never announced in advance, so one with no Lead before it stays in the database but not on these pages.
+  const isSpecific = m => /เฉพาะเจาะจง/.test(m || "");
+  const inScope = o => !!(o.lead_types && o.lead_types.length) || !isSpecific(o.method);
+  const inMethod = (k, r) => k === "all" || methodGroup(r.method) === k;
+  const methodPill = m => m ? `<span class="pill" title="${esc(m)}">${esc(methodShort(m))}</span>` : "";
+  // W2 changed the winner, W1 withdrew it (back to waiting for the result)
+  const changePill = r => !r.award_changed && !r.changed ? ""
+    : r.withdrawn || (r.award_changed && !r.awarded) ? '<span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ รอประกาศใหม่</span>'
+    : `<span class="pill warn" title="${esc(r.prev_winners ? "เดิม: " + r.prev_winners : "")}">🔄 เปลี่ยนผู้ชนะ${r.prev_winners ? " · เดิม " + esc(r.prev_winners) : ""}</span>`;
+  const dueText = d => { const n = daysTo(d); return n === 0 ? "วันนี้" : n === 1 ? "พรุ่งนี้" : `อีก ${n} วัน`; };
+  const sum = (rows, k) => rows.reduce((a, r) => a + (num(r[k]) || 0), 0);
+
+  function hashParams() { return new URLSearchParams(location.hash.slice(1)); }
+  const token = () => hashParams().get("t") || "";
+  const href = (o = {}) => "#" + new URLSearchParams({ t: token(), ...o });
+
+  function statusPill(s, by, at) {
+    if (!s) return '<span class="pill">ยังไม่มีสถานะ</span>';
+    const cls = s === "bid" ? "done" : s === "no_bid" ? "bad" : "st";
+    return `<span class="pill ${cls}" title="${esc(by ? `${by} · ${thTime(at)}` : "")}">${esc(STATUS[s] || s)}</span>`;
+  }
+  const resultPill = r => r && RESULT[r] ? `<span class="pill ${RESULT[r][1]}">${RESULT[r][0]}</span>` : "";
+
+  async function api(action, extra = {}) {
+    if (!window.EGP_API) throw new Error("ยังไม่ได้ตั้งค่าที่อยู่ของระบบ ติดต่อผู้ดูแลระบบ");
+    const res = await fetch(window.EGP_API, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: token(), action, ...extra }) });
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* handled below */ }
+    if (!res.ok) throw new Error(data.error || "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง");
+    if (data.user) {
+      state.user = data.user;
+      document.getElementById("who").textContent = `${data.user.name} · ${EDITORS.includes(data.user.role) ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+    }
+    if (data.provinces) state.provinces = data.provinces;
+    return data;
+  }
+
+  // ---------------- usage ----------------
+  // A random id this browser keeps, so a shared link (Monitor) still counts devices. No IP is stored.
+  const device = (() => {
+    const make = () => [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, "0")).join("");
+    try { let d = localStorage.getItem("kg-device"); if (!/^[0-9a-f]{16}$/.test(d || "")) { d = make(); localStorage.setItem("kg-device", d); } return d; }
+    catch (e) { return make(); }
+  })();
+  let pingView = null;
+  const ping = (view, visit) => { pingView = view; api("ping", { device, view, visit }).catch(() => {}); };
+  // every minute while the page is in front: "online now" = a ping in the last 2 minutes
+  setInterval(() => { if (pingView && document.visibilityState === "visible") ping(pingView, false); }, 60000);
+  document.addEventListener("visibilitychange", () => { if (pingView && document.visibilityState === "visible") ping(pingView, false); });
+
+  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
+  let usageTimer = null;
+  async function usagePage(quiet) {
+    if (!quiet) main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
+    let u;
+    try { u = await api("usage"); } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    if (currentView !== "usage") return;
+    const ago = t => { if (!t) return "ยังไม่เคยเข้า"; const m = Math.max(0, Math.round((Date.now() - new Date(t)) / 60000));
+      return m < 2 ? "เมื่อสักครู่" : m < 60 ? `${m} นาทีที่แล้ว` : m < 1440 ? `${Math.round(m / 60)} ชั่วโมงที่แล้ว` : thTime(t); };
+    const others = u.people.filter(x => !x.admin);
+    const never = others.filter(x => !x.last_visit);
+    const onlineOthers = u.online.filter(o => !o.admin);
+    // people: most recent first, never visited last, the admin at the very end
+    const people = [...u.people].sort((x, y) => (!!x.admin - !!y.admin) || ((y.last_visit ? 1 : 0) - (x.last_visit ? 1 : 0))
+      || String(y.last_visit).localeCompare(String(x.last_visit)));
+    const pages = Object.entries(u.pages || {}).sort((a, b) => b[1] - a[1]);
+    const who = x => `${esc(x.name)}<div class="small muted">${esc(ROLE[x.role] || x.role)}${x.admin ? " · ไม่นับในยอดรวม" : ""}</div>`;
+    main.innerHTML = `
+      <div class="small muted" style="margin-bottom:8px">ยอดรวมทุกช่องไม่นับบัญชีผู้ดูแลระบบ (การทดสอบจะทำให้ตัวเลขสูงเกินจริง) · อัปเดตเองทุก 1 นาที</div>
+      <div class="kpis">
+        <div class="kpi win"><span class="label">ออนไลน์ตอนนี้</span><span class="value">${onlineOthers.length}</span><span class="sub">คน · ${onlineOthers.reduce((a, o) => a + o.devices, 0)} อุปกรณ์ ที่เปิดหน้าเว็บอยู่</span></div>
+        <div class="kpi"><span class="label">เข้าใช้วันนี้</span><span class="value">${u.today_people}</span><span class="sub">คน · ${u.today_devices} อุปกรณ์</span></div>
+        <div class="kpi"><span class="label">เข้าใช้ 7 วันล่าสุด</span><span class="value">${u.week_people}</span><span class="sub">คน จาก ${others.length} บัญชี · ${u.week_devices} อุปกรณ์</span></div>
+        <div class="kpi alert"><span class="label">ยังไม่เคยเข้าเลย</span><span class="value">${never.length}</span><span class="sub">${never.length ? esc(never.map(x => x.name.replace(/\s*\(.*\)$/, "")).slice(0, 4).join(", ")) + (never.length > 4 ? " …" : "") : "ทุกบัญชีเคยเข้าแล้ว"}</span></div>
+      </div>
+      <div class="grid2">
+        <div class="card"><div class="section-head"><h2>ออนไลน์ตอนนี้</h2><button class="btn sm" type="button" id="refresh">โหลดใหม่</button></div>
+          <div class="small muted" style="margin-bottom:6px">คนที่เปิดหน้าเว็บค้างไว้ภายใน 2 นาทีล่าสุด</div>
+          ${u.online.length ? `<div class="tbl"><table><thead><tr><th>ใคร</th><th>กำลังดูหน้า</th><th class="c">อุปกรณ์</th></tr></thead><tbody>${u.online.map(o =>
+            `<tr><td>${who(o)}</td><td>${esc(VIEW_NAME[o.view] || o.view)}</td><td class="c">${o.devices}</td></tr>`).join("")}</tbody></table></div>`
+            : '<div class="small muted">ตอนนี้ไม่มีใครเปิดหน้าเว็บ</div>'}</div>
+        <div class="card"><h2>หน้าที่ถูกเปิดบ่อย</h2><div class="small muted" style="margin-bottom:6px">7 วันล่าสุด (วันนี้และ 6 วันก่อนหน้า)</div>
+          ${pages.length ? `<div class="tbl"><table><thead><tr><th>หน้า</th><th class="c">เปิด (ครั้ง)</th></tr></thead><tbody>${pages.map(([k, n]) =>
+            `<tr><td>${esc(VIEW_NAME[k] || k)}</td><td class="c">${n}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}</div>
+      </div>
+      <div class="card"><div class="section-head"><h2>รายคน</h2><span class="small muted">Monitor ทุกคนใช้บัญชี Monitor (รวม) บัญชีเดียว จึงดูจากจำนวนอุปกรณ์แทน</span></div>
+        <div class="tbl"><table><thead>
+          <tr><th rowspan="2">ใคร</th><th rowspan="2">เข้าใช้ล่าสุด</th><th class="grp" colspan="4">ใน 7 วันล่าสุด (วันนี้และ 6 วันก่อนหน้า)</th></tr>
+          <tr><th class="c">เข้ากี่วัน</th><th class="c">เปิดหน้า (ครั้ง)</th><th class="c">อุปกรณ์ (เครื่อง)</th><th class="c">กดสถานะ (ครั้ง)</th></tr></thead><tbody>
+        ${people.map(x => `<tr class="${x.last_visit ? "" : "dim"}"><td>${who(x)}</td><td>${ago(x.last_visit)}</td>
+          <td class="c">${x.days_7} / 7</td><td class="c">${x.views_7}</td><td class="c">${x.devices_7}</td><td class="c">${x.role === "viewer" ? "–" : x.updates_7}</td></tr>`).join("")}</tbody></table></div></div>
+      <div class="card"><h2>รายวัน</h2><div class="small muted" style="margin-bottom:6px">14 วันล่าสุด · วันที่ไม่มีใครเข้าไม่แสดง</div>
+        ${u.days.length ? `<div class="tbl"><table><thead><tr><th>วัน</th><th class="c">คน</th><th class="c">อุปกรณ์</th><th class="c">เปิดหน้า (ครั้ง)</th></tr></thead><tbody>${[...u.days].reverse().map(d =>
+          `<tr><td>${esc(thDate(d.day))}</td><td class="c">${d.people}</td><td class="c">${d.devices}</td><td class="c">${d.views}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ยังไม่มีข้อมูล</div>'}
+        <div class="small muted">นับจากการเปิดหน้าเว็บ (การเปิดอีเมลไม่นับ) · ไม่เก็บ IP · เก็บย้อนหลัง 180 วัน</div></div>`;
+    document.getElementById("refresh").onclick = () => usagePage(true);
+    clearTimeout(usageTimer);
+    usageTimer = setTimeout(() => { if (currentView === "usage" && document.visibilityState === "visible") usagePage(true); }, 60000);
+  }
+
+  function download(name, rows) {
+    if (!window.XLSX) { setTimeout(() => download(name, rows), 400); return; }
+    const wb = XLSX.utils.book_new(), p = per();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name.slice(0, 31));
+    XLSX.writeFile(wb, `KG_Lead_${name}_${p.from}${p.to !== p.from ? "_" + p.to : ""}.xlsx`);
+  }
+
+  // ---------------- state ----------------
+  // Each tab keeps its own period. Lead, ผลลัพธ์ and ภาพรวม count by morning-email day; ติดตามสถานะ by the
+  // day of the latest status update.
+  const state = {
+    user: null, provinces: [], days: [], area: "target",
+    per: { leads: { preset: "last" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" } },
+    cache: {}, leads: null, outcomes: null, tracking: null,
+    l: { type: "D0", score: "all", method: "all", status: "none", q: "", sort: "score", shown: 60 },
+    t: { col: "all", who: "all", sort: "latest", shown: 50 },
+    r: { q: "", score: "all", method: "all", shown: 100, open: null },
+    o: { score: "all", method: "all" },
+  };
+  const per = () => state.per[currentView] || state.per.leads;
+  const mayEdit = () => !!state.user && EDITORS.includes(state.user.role);
+  // A D0 whose bid day has passed and nobody gave it a status: a lead we let go by.
+  const closed = r => !!(r.awarded || r.result || r.cancelled);
+  // what the card's button says: update, record after the result (bid / no bid only), or just view
+  const actLabel = r => !mayEdit() ? "ดูรายละเอียด" : !closed(r) ? "อัปเดตสถานะ" : r.cancelled ? "ดูรายละเอียด" : "บันทึกย้อนหลัง";
+  const missed = r => !r.status && r.type === "D0" && !r.cancelled && daysTo(r.bid_date) !== null && daysTo(r.bid_date) < 0;
+  // One status per lead, first match wins: cancelled, then what someone pressed, then a bid day that passed
+  // with nobody pressing anything, else no status yet. The Lead filters count each lead once.
+  const leadState = r => r.cancelled ? "cancelled" : r.awarded ? "awarded" : r.status === "bid" ? "bid"
+    : r.status === "no_bid" ? "no_bid" : r.status ? "doing" : missed(r) ? "missed" : "none";
+  const leadPill = r => { const st = leadState(r);
+    return st === "cancelled" ? '<span class="pill bad">ยกเลิกแล้ว</span>'
+      : st === "awarded" ? (!r.result ? '<span class="pill">ประกาศผู้ชนะแล้ว</span>'
+          // the result came out and nobody had pressed a status (as ติดตามสถานะ shows it)
+          : r.status ? statusPill(r.status, r.status_by, r.status_at) : '<span class="pill">ไม่มีการกดสถานะ</span>')
+      : st === "missed" ? '<span class="pill bad">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</span>' : statusPill(r.status, r.status_by, r.status_at); };
+  // "ยื่นราคาแล้ว": someone pressed bid, or the result is out after a bid (lost) or a win. The same rule in
+  // ภาพรวม (tile and progress) and the Lead filter, so the tile's number is what its link opens.
+  const bidDone = r => r.status === "bid" || r.result === "lost" || r.result === "win";
+  // ภาพรวม's table by type: a project is ended (winner announced or cancelled), missed, or still open
+  const isEnded = r => ["awarded", "cancelled"].includes(leadState(r));
+  const isOpen = r => !isEnded(r) && leadState(r) !== "missed";
+  // e-GP numbers a project's announcements in its links (…&seqNo=4): the highest is the latest
+  const seqNo = link => Number((String(link || "").match(/seqNo=(\d+)/) || [])[1] || 0);
+  const inTarget = r => !r.province || state.provinces.includes(r.province);
+  const areaOk = r => state.area === "all" || (state.area === "target" ? inTarget(r) : !inTarget(r));
+  const AREA = [["target", "กทม. และปริมณฑล"], ["others", "จังหวัดอื่น"], ["all", "ทุกจังหวัด"]];
+  // The government fiscal year runs 1 Oct – 30 Sep and is named by the Buddhist year it ends in
+  // (1 Oct 2026 – 30 Sep 2027 = ปีงบ 2570). At most 12 months: each extra month adds about 2 MB to every load.
+  const fyStart = iso => (Number(iso.slice(5, 7)) >= 10 ? iso.slice(0, 4) : String(Number(iso.slice(0, 4)) - 1)) + "-10-01";
+  const fyLabel = () => `ปีงบ ${Number(fyStart(todayISO()).slice(0, 4)) + 544}`;
+  // Fewer buttons before roll-out (3 Nov 2026): 30 วัน repeated เดือนนี้, 3 เดือน was rarely needed (กำหนดเอง),
+  // 12 เดือน became the fiscal year.
+  const PRESETS = [["last", "ฉบับล่าสุด"], ["7", "7 วัน"], ["month", "เดือนนี้"], ["fy", fyLabel()], ["custom", "กำหนดเอง"]];
+
+  function applyPreset(p, target = per()) {
+    target.preset = p;
+    const end = todayISO(), last = state.days[state.days.length - 1] || end;
+    if (p === "last") { target.from = target.to = last; }
+    else if (p === "month") { target.from = end.slice(0, 8) + "01"; target.to = end; }
+    else if (p === "fy") { target.from = fyStart(end); target.to = end; }
+    else if (p !== "custom") { target.to = end; target.from = addDays(end, -(Number(p) - 1)); }
+  }
+
+  async function ensureRange() {
+    const { from, to } = per(), key = `${from}|${to}`;
+    if (!state.cache[key]) {
+      const [l, o] = await Promise.all([api("leads", { from, to }), api("outcomes", { from, to })]);
+      state.cache[key] = { leads: groupLeads(l.rows || []), outcomes: (o.rows || []).filter(inScope) };
+    }
+    ({ leads: state.leads, outcomes: state.outcomes } = state.cache[key]);
+  }
+
+  // One row per project. Its announcements (ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) fold into the latest one,
+  // so a project is counted once and its budget once. A plan (P0) joins its project when the database matched
+  // them (plan_links: same agency, same budget to the baht, one-to-one); otherwise it stays apart.
+  const STAGE = { P0: 0, B0: 1, "15": 2, D0: 3 };
+  // A project's budget: the latest stage that states one (ประกาศเชิญชวน, then ราคากลาง, ร่าง TOR, แผน).
+  // The same rule on the lists and on the project page.
+  const latestBudget = rs => {
+    const b = [...rs].filter(r => r.type in STAGE && num(r.budget_thb) !== null)
+      .sort((a, b) => STAGE[b.type] - STAGE[a.type] || String(b.pub_date).localeCompare(String(a.pub_date)))[0];
+    return b ? b.budget_thb : null;
+  };
+  function groupLeads(rows) {
+    const by = new Map();
+    rows.forEach(r => { const g = by.get(r.lead_key); if (g) g.push(r); else by.set(r.lead_key, [r]); });
+    return [...by.values()].map(rs => {
+      rs.sort((a, b) => STAGE[a.type] - STAGE[b.type] || String(a.pub_date).localeCompare(String(b.pub_date)));
+      const top = rs[rs.length - 1], seen = new Set();
+      return { ...top, score: Math.max(...rs.map(r => r.score)), linked_plan: rs.map(r => r.linked_plan).find(Boolean) || null,
+        budget_thb: latestBudget(rs),
+        stages: [...rs].reverse().filter(r => !seen.has(r.type) && seen.add(r.type)).reverse().map(r => ({ type: r.type, pub_date: r.pub_date })) };
+    });
+  }
+
+  // ---------------- layout pieces ----------------
+  function renderNav(view) {
+    document.getElementById("nav").innerHTML = VIEWS.filter(([k]) => k !== "usage" || (state.user && state.user.admin)).map(([k, label, icon]) =>
+      `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${label}</a>`).join("");
+  }
+
+  function toolbar({ period = true, area = true } = {}) {
+    const p = per(), single = p.from === p.to;
+    const what = currentView === "tracking" ? "อัปเดตสถานะล่าสุด" : "อีเมลเช้า";
+    const periodText = (single ? `${what}วันที่ ${thDate(p.from)}` : `${what} ${thDate(p.from)} – ${thDate(p.to)}`)
+      + (p.from < FIRST_DAY ? " · ข้อมูลเริ่ม 9 ต.ค. 2569" : "");
+    // No min on the date inputs: any month can be picked; days before the first data show an empty list.
+    return `<div class="card toolbar">
+      ${period ? `<div class="toolrow">
+        <div class="seg" role="group" aria-label="ช่วงเวลา">${PRESETS.map(([k, l]) => `<button type="button" data-preset="${k}" aria-pressed="${p.preset === k}">${l}</button>`).join("")}</div>
+        <div class="daterow">
+          ${single ? `<button class="btn sm" type="button" data-step="-1" aria-label="วันก่อนหน้า">◀</button>` : ""}
+          <input type="date" id="from" value="${p.from}" max="${todayISO()}" aria-label="ตั้งแต่วันที่">
+          <span class="muted">ถึง</span>
+          <input type="date" id="to" value="${p.to}" max="${todayISO()}" aria-label="ถึงวันที่">
+          ${single ? `<button class="btn sm" type="button" data-step="1" aria-label="วันถัดไป">▶</button>` : ""}
+        </div></div>` : ""}
+      <div class="toolrow">
+        ${area ? `<div class="seg" role="group" aria-label="พื้นที่">${AREA.map(([k, l]) => `<button type="button" data-area="${k}" aria-pressed="${state.area === k}">${l}</button>`).join("")}</div>` : "<span></span>"}
+        <span class="period-label">${period ? esc(periodText) : ""}</span>
+      </div></div>`;
+  }
+
+  function bindToolbar(rerender) {
+    const p = per();
+    main.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => {
+      if (b.dataset.preset === "custom") { p.preset = "custom"; rerender(false); main.querySelector("#from")?.focus(); return; }
+      applyPreset(b.dataset.preset, p); rerender(true);
+    });
+    main.querySelectorAll("[data-area]").forEach(b => b.onclick = () => { state.area = b.dataset.area; rerender(false); });
+    const f = main.querySelector("#from"), t = main.querySelector("#to");
+    if (f) f.onchange = () => { if (!f.value) return; p.preset = "custom"; p.from = f.value; if (p.to < p.from) p.to = p.from; rerender(true); };
+    if (t) t.onchange = () => { if (!t.value) return; p.preset = "custom"; p.to = t.value; if (p.from > p.to) p.from = p.to; rerender(true); };
+    main.querySelectorAll("[data-step]").forEach(b => b.onclick = () => {
+      const dir = Number(b.dataset.step), d = state.days;
+      // the lists step between morning-email days; the status board steps one calendar day
+      const next = currentView === "tracking" ? null : dir < 0 ? [...d].reverse().find(x => x < p.from) : d.find(x => x > p.to);
+      p.from = p.to = next || addDays(p.from, dir); p.preset = "custom"; rerender(true);
+    });
+  }
+
+  // Render a page: toolbar stays put; data loading / errors show below it.
+  async function page(view, build, opts = {}) {
+    const draw = async (reload) => {
+      main.innerHTML = toolbar(opts) + `<div id="body">${reload ? '<div class="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>' : ""}</div>`;
+      bindToolbar(draw);
+      const body = document.getElementById("body");
+      try {
+        if (opts.load) await opts.load();
+        body.innerHTML = "";
+        build(body, draw);
+      } catch (e) { body.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; }
+    };
+    await draw(true);
+  }
+
+  // ---------------- lead card ----------------
+  function leadCard(r) {
+    const left = r.type === "D0" ? daysTo(r.bid_date) : null;
+    const when = r.type === "P0" ? (r.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(r.expected_month))}</span>` : "")
+      : r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${r.bid_time ? " " + esc(r.bid_time) : ""}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : left !== null && left < 0 ? " · ปิดแล้ว" : ""}</span>` : "";
+    const canEdit = mayEdit() && !closed(r);
+    const trail = r.stages && r.stages.length > 1
+      ? `<span>${r.stages.map(x => `${esc(TYPE[x.type] || x.type)} ${esc(thDate(x.pub_date))}`).join(" → ")}</span>`
+      : `<span>ประกาศ ${esc(thDate(r.pub_date))}</span>`;
+    return `<a class="lead" href="${href({ lead: r.lead_key, from: currentView })}">
+      <div style="display:grid;gap:5px;min-width:0">
+        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${leadPill(r)}${resultPill(r.result)}${changePill(r)}
+          ${r.linked_plan && r.type !== "P0" ? `<span class="pill" title="หน่วยงานเดียวกันและงบเท่ากันพอดี">🔗 จับคู่กับแผน ${esc(r.linked_plan)}</span>` : ""}
+          ${r.amended && !r.cancelled ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
+        <div class="title">${esc(r.title)}</div>
+        <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}${trail}</div>
+      </div>
+      <div class="money"><span class="label">${r.type === "P0" ? "งบตามแผน" : "งบประมาณ"}</span>
+        <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
+        <span class="act btn sm ${canEdit ? "primary" : ""}">${actLabel(r)}</span></div>
+    </a>`;
+  }
+
+  // ---------------- ภาพรวม ----------------
+  function overview(body) {
+    const O = state.o;
+    const leads = state.leads.filter(areaOk).filter(r => inBand(O.score, r)).filter(r => inMethod(O.method, r));
+    const outs = state.outcomes.filter(o => o.kind === "result").filter(o => inBand(O.score, o)).filter(o => inMethod(O.method, o));
+    const moved = r => !!r.status || bidDone(r);
+    // wins announced in the period that came from a Lead (the tile opens the same list in ผลลัพธ์)
+    const leadWins = outs.filter(o => o.ours && o.lead_types && areaOk(o));
+    const plans = leads.filter(r => r.type === "P0"), announced = leads.filter(r => r.type !== "P0");
+    // every count leaves the plans out (they have their own box under the table by type)
+    const noStatus = announced.filter(r => leadState(r) === "none");
+    const bid = announced.filter(bidDone);
+    // still open for bids: not cancelled, no winner announced
+    const soon = leads.filter(r => r.type === "D0" && !["cancelled", "awarded"].includes(leadState(r))
+        && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date)))
+      .sort((a, b) => a.bid_date.localeCompare(b.bid_date));
+    const top = [...leads].filter(r => num(r.budget_thb) !== null).sort((a, b) => num(b.budget_thb) - num(a.budget_thb)).slice(0, 6);
+    // The type rows count only projects still under way: past the bid date with no status, and winner announced
+    // or cancelled (any type), have their own rows below them, so the rows add up to รวม (user, 23 Nov 2026)
+    const byType = ["B0", "15", "D0"].map(t => [t, leads.filter(r => r.type === t && isOpen(r))]);
+    const letGo = leads.filter(r => leadState(r) === "missed");
+    const ended = announced.filter(isEnded);
+    const funnel = [["Lead ทั้งหมด", announced.length], ["มีสถานะแล้ว", announced.filter(moved).length],
+      ["ส่งให้ Mer", announced.filter(r => ["sent_to_mer", "mer_replied"].includes(r.status) || bidDone(r)).length],
+      ["ยื่นราคาแล้ว", bid.length],
+      ["ชนะ (Lead ในช่วงนี้)", announced.filter(r => r.result === "win").length]];
+    const max = Math.max(1, funnel[0][1]);
+    const mini = r => `<a class="mini" href="${href({ lead: r.lead_key, from: "overview" })}"><span class="t">${esc(r.title)}</span><span class="amt">${short(r.budget_thb)}</span>
+      <span class="small muted">${esc(TYPE[r.type])} · ${esc(r.dept_name || "")}${r.type === "D0" && r.bid_date ? ` · <span class="${daysTo(r.bid_date) <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))} (${dueText(r.bid_date)})</span>` : ""}</span>
+      <span>${leadPill(r)}</span></a>`;
+    const MISSED_ROW = `<tr class="warn"><td><a href="${href({ v: "leads", type: "D0", status: "missed", sync: "overview", score: O.score, method: O.method })}">⚠️ เลยวันยื่นซอง ไม่มีใครอัปเดต</a><div class="small muted">ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</div></td><td class="num">${letGo.length}</td><td class="num money">${short(sum(letGo, "budget_thb"))}</td></tr>`;
+    const ENDED_ROW = `<tr><td><a href="${href({ v: "leads", type: "np", status: "ended", sync: "overview", score: O.score, method: O.method })}">ประกาศผู้ชนะแล้ว / ยกเลิกแล้ว</a><div class="small muted">ทุกประเภทข้างบนที่จบแล้ว · ดูผลที่แท็บผลลัพธ์</div></td><td class="num">${ended.length}</td><td class="num money">${short(sum(ended, "budget_thb"))}</td></tr>`;
+    const COLS = '<colgroup><col><col style="width:64px"><col style="width:118px"></colgroup>';
+    const all = state.leads.filter(areaOk);
+    body.innerHTML = `
+      <div class="card frows">${methodChips(O.method, all.filter(r => inBand(O.score, r)))}${scoreChips(O.score, all.filter(r => inMethod(O.method, r)))}</div>
+      <div class="kpis">
+        <a class="kpi" href="${href({ v: "leads", type: "np", status: "all", sync: "overview", score: O.score, method: O.method })}"><span class="label">Lead ในช่วงนี้ (ไม่รวมแผน)</span><span class="value">${announced.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(announced, "budget_thb"))}</span></a>
+        <a class="kpi alert" href="${href({ v: "leads", type: "np", status: "none", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยังไม่มีสถานะ (ไม่รวมแผน)</span><span class="value">${noStatus.length.toLocaleString("th-TH")}</span><span class="sub">งบรวม ${short(sum(noStatus, "budget_thb"))}</span></a>
+        <a class="kpi" href="${href({ v: "leads", type: "np", status: "bid", sync: "overview", score: O.score, method: O.method })}"><span class="label">ยื่นราคาแล้ว (ไม่รวมแผน)</span><span class="value">${bid.length}</span><span class="sub">งบรวม ${short(sum(bid, "budget_thb"))} · รวมที่มีผลแล้ว</span></a>
+        <a class="kpi win" href="${href({ v: "results", sync: "overview", score: O.score, method: O.method, open: "leadwins" })}"><span class="label">OfficeMate ชนะ (จาก Lead)</span><span class="value">${leadWins.length}</span><span class="sub">ประกาศผลในช่วงนี้ · มูลค่า ${short(sum(leadWins, "winner_price"))}</span></a>
+      </div>
+      <div class="ov">
+        <div class="card"><div class="section-head"><h2>Lead แยกตามประเภท</h2><span class="small muted">1 โครงการนับครั้งเดียว ตามประกาศล่าสุด</span></div>
+          <div class="tbl split plans"><table>${COLS}<thead><tr><th>ประเภท</th><th>จำนวน</th><th>งบรวม</th></tr></thead><tbody><tr><td><a href="${href({ v: "leads", type: "P0", status: "all", sync: "overview", score: O.score, method: O.method })}">${TYPE.P0}</a><div class="small muted">${TYPE_MEANING.P0} · ไม่นับในรวม เพราะยังเป็นแผน</div></td><td class="num">${plans.length}</td><td class="num money">${short(sum(plans, "budget_thb"))}</td></tr>
+          </tbody></table></div>
+          <div class="tbl split"><table>${COLS}<tbody>
+          ${byType.map(([t, rs]) => `<tr><td><a href="${href({ v: "leads", type: t, status: "open", sync: "overview", score: O.score, method: O.method })}">${TYPE[t]}</a><div class="small muted">${t === "D0" ? "เปิดให้ยื่นราคา · ยังไม่มีผล (ไม่รวม 2 แถวถัดไป)" : TYPE_MEANING[t]}</div></td><td class="num">${rs.length}</td><td class="num money">${short(sum(rs, "budget_thb"))}</td></tr>${t === "D0" ? MISSED_ROW + ENDED_ROW : ""}`).join("")}
+          <tr class="total"><td>รวม<div class="small muted">งบที่หน่วยงานประกาศจัดหาแล้ว</div></td><td class="num">${announced.length}</td><td class="num money">${short(sum(announced, "budget_thb"))}</td></tr>
+          </tbody></table></div></div>
+        <div class="card"><div class="section-head"><h2>💰 Lead งบสูงสุด</h2><a class="small" href="${href({ v: "leads", type: "all", status: "all", sort: "budget", sync: "overview", score: O.score, method: O.method })}">ดูทั้งหมด →</a></div>
+          <div>${top.map(mini).join("") || '<div class="empty">ไม่มี Lead ที่ระบุงบ</div>'}</div></div>
+        <div class="stack">
+        <div class="card"><h2>ความคืบหน้าของ Lead ในช่วงนี้</h2><div class="small muted">ไม่รวมแผนจัดซื้อ</div>
+          <div class="funnel">${funnel.map(([l, n], i) => `<div class="fbar"><span>${l}</span><div class="track"><div class="fill ${i === 4 ? "win" : ""}" style="width:${Math.round(n / max * 100)}%"></div></div><span class="n">${n}</span></div>`).join("")}</div></div>
+        <div class="card"><div class="section-head"><h2>⏰ ใกล้ปิดรับซอง (7 วัน)</h2><span class="small muted">${soon.length} รายการ</span></div>
+          <div>${soon.slice(0, 8).map(mini).join("") || '<div class="empty">ไม่มีประกาศเชิญชวนที่ปิดรับซองใน 7 วัน</div>'}</div></div>
+        </div>
+      </div>`;
+    body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { O.score = b.dataset.score; overview(body); });
+    body.querySelectorAll("[data-method]").forEach(b => b.onclick = () => { O.method = b.dataset.method; overview(body); });
+  }
+
+  // ---------------- Lead ----------------
+  // the score bands of the email footer and the คู่มือ tab
+  const SCORE_BANDS = [["90", "100–90"], ["75", "89–75"], ["60", "74–60"], ["50", "59–50"]];
+  const band = s => s == null || s < 50 ? null : s >= 90 ? "90" : s >= 75 ? "75" : s >= 60 ? "60" : "50";
+  const inBand = (k, r) => k === "all" || band(r.score) === k;
+  const frow = (label, chips) => `<div class="frow"><span class="flabel">${label}</span><div class="chips" role="group" aria-label="${label}">${chips}</div></div>`;
+  const scoreChips = (k0, rows) => frow("คะแนน", SCORE_FILTERS.map(([k, l]) =>
+    `<button class="chip" type="button" data-score="${k}" aria-pressed="${k0 === k}">${k === "all" ? l : `<span class="score s${k}">${l}</span>`}<span class="n">${rows.filter(r => inBand(k, r)).length}</span></button>`).join(""));
+  const SCORE_FILTERS = [["all", "ทุกช่วงคะแนน"], ...SCORE_BANDS];
+  const methodChips = (k0, rows) => frow("วิธีจัดหา", METHOD_FILTERS.map(([k, l]) =>
+    `<button class="chip" type="button" data-method="${k}" aria-pressed="${k0 === k}">${l}<span class="n">${rows.filter(r => inMethod(k, r)).length}</span></button>`).join(""));
+  const TYPE_FILTERS = [["all", "ทั้งหมด"], ["D0", "ประกาศเชิญชวน"], ["15", "ราคากลาง"], ["B0", "ร่าง TOR"], ["P0", "แผนจัดซื้อ"],
+    ["np", "ทั้งหมด ยกเว้นแผนจัดซื้อ"]];
+  // "ยื่นแล้ว" keeps the bids whose result is out (they also count under "ประกาศผู้ชนะแล้ว"), so it shows the
+  // same projects as ภาพรวม's "ยื่นราคาแล้ว" tile; the other states are one per lead.
+  const STATUS_FILTERS = [["all", "ทุกสถานะ", () => true],
+    ...[["none", "ยังไม่มีสถานะ"], ["doing", "กำลังทำ"]].map(([k, l]) => [k, l, r => leadState(r) === k]),
+    ["bid", "ยื่นแล้ว (รวมที่มีผลแล้ว)", bidDone],
+    ...[["no_bid", "ไม่ยื่น"], ["missed", "เลยวันยื่นซอง ไม่มีใครอัปเดต"], ["cancelled", "ยกเลิกแล้ว"], ["awarded", "ประกาศผู้ชนะแล้ว"]]
+      .map(([k, l]) => [k, l, r => leadState(r) === k]),
+    // opened from ภาพรวม's table by type only; their buttons show only while picked (HIDDEN_STATUS)
+    ["open", "ยังไม่จบ (ไม่รวมเลยวันยื่นซอง ผู้ชนะ ยกเลิก)", isOpen], ["ended", "ประกาศผู้ชนะแล้ว / ยกเลิกแล้ว", isEnded]];
+  const HIDDEN_STATUS = ["open", "ended"];
+  const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
+    budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
+    deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
+      return ((x !== null && x >= 0) ? x : 9999) - ((y !== null && y >= 0) ? y : 9999) || b.score - a.score; }],
+    newest: ["ประกาศล่าสุด", (a, b) => String(b.pub_date).localeCompare(String(a.pub_date)) || b.score - a.score] };
+
+  function leadsPage(body, redraw) {
+    const L = state.l;
+    // a project whose winner is announced is no longer a lead: it shows only under "ประกาศผู้ชนะแล้ว" (or ทุกสถานะ)
+    const area = state.leads.filter(areaOk);
+    const sf = STATUS_FILTERS.find(f => f[0] === L.status)[2];
+    const q = L.q.trim().toLowerCase();
+    // each button counts what pressing it would show, with the other rows as they are
+    const isType = (k, r) => k === "all" || (k === "np" ? r.type !== "P0" : r.type === k);
+    const byType = r => isType(L.type, r), byScore = r => inBand(L.score, r), byMethod = r => inMethod(L.method, r);
+    const byText = r => !q || `${r.title} ${r.dept_name} ${r.province || ""} ${r.project_no || ""} ${r.plan_no || ""} ${r.linked_plan || ""}`.toLowerCase().includes(q);
+    const rows = area.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).sort(SORTS[L.sort][1]);
+    const picked = [L.type !== "all" && TYPE_FILTERS.find(f => f[0] === L.type)[1], L.method !== "all" && METHOD_FILTERS.find(f => f[0] === L.method)[1],
+      L.score !== "all" && SCORE_FILTERS.find(f => f[0] === L.score)[1],
+      L.status !== "all" && STATUS_FILTERS.find(f => f[0] === L.status)[1], q && `“${L.q.trim()}”`].filter(Boolean);
+    body.innerHTML = `
+      <div class="card">
+        <button class="btn ftoggle" type="button" id="ftog" aria-expanded="${!!L.fopen}"><span>ตัวกรอง: ${esc(picked.join(" · ") || "ทั้งหมด")}</span><span>${L.fopen ? "▲" : "▼"}</span></button>
+        <div class="filters ${L.fopen ? "open" : ""}">
+        ${frow("ประเภท", TYPE_FILTERS.map(([k, l]) =>
+          `<button class="chip" type="button" data-type="${k}" aria-pressed="${L.type === k}">${l}<span class="n">${area.filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(r => isType(k, r)).length}</span></button>`).join(""))}
+        ${methodChips(L.method, area.filter(byType).filter(byScore).filter(sf).filter(byText))}
+        ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
+        ${frow("สถานะ", STATUS_FILTERS.filter(([k]) => !HIDDEN_STATUS.includes(k) || L.status === k).map(([k, l, f]) =>
+          `<button class="chip" type="button" data-status="${k}" aria-pressed="${L.status === k}">${l}<span class="n">${area.filter(byType).filter(byScore).filter(byMethod).filter(byText).filter(f).length}</span></button>`).join(""))}
+        <div class="toolrow">
+          <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อ หน่วยงาน เลขโครงการ/แผน" value="${esc(L.q)}" aria-label="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด เลขโครงการ หรือเลขแผน">
+          <div class="daterow"><label class="small muted" for="sort">เรียง</label>
+            <select id="sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${L.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select>
+            <button class="btn" type="button" id="dl">⬇ Excel</button></div>
+        </div>
+        ${picked.length ? '<div><button class="btn sm" type="button" id="clear">ล้างตัวกรอง</button></div>' : ""}
+        </div>
+        <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))} · โครงการที่มีหลายประกาศแสดงครั้งเดียวตามประกาศล่าสุด</div>
+      </div>
+      <div class="list">${rows.slice(0, L.shown).map(leadCard).join("") || '<div class="card empty">ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่</div>'}</div>
+      ${rows.length > L.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - L.shown})</button></div>` : ""}`;
+    body.querySelectorAll("[data-type]").forEach(b => b.onclick = () => { L.type = b.dataset.type; L.shown = 60; leadsPage(body, redraw); });
+    body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { L.score = b.dataset.score; L.shown = 60; leadsPage(body, redraw); });
+    body.querySelectorAll("[data-status]").forEach(b => b.onclick = () => { L.status = b.dataset.status; L.shown = 60; leadsPage(body, redraw); });
+    document.getElementById("sort").onchange = e => { L.sort = e.target.value; leadsPage(body, redraw); };
+    document.getElementById("ftog").onclick = () => { L.fopen = !L.fopen; leadsPage(body, redraw); };
+    const clear = document.getElementById("clear");
+    if (clear) clear.onclick = () => { Object.assign(L, { type: "all", score: "all", method: "all", status: "all", q: "", shown: 60 }); leadsPage(body, redraw); };
+    body.querySelectorAll("[data-method]").forEach(b => b.onclick = () => { L.method = b.dataset.method; L.shown = 60; leadsPage(body, redraw); });
+    const qi = document.getElementById("q");
+    qi.oninput = () => { L.q = qi.value; const p = qi.selectionStart; leadsPage(body, redraw); const n = document.getElementById("q"); n.focus(); n.setSelectionRange(p, p); };
+    const more = document.getElementById("more"); if (more) more.onclick = () => { L.shown += 60; leadsPage(body, redraw); };
+    document.getElementById("dl").onclick = () => download(`Lead_${AREA.find(a => a[0] === state.area)[1]}`, rows.map(r => ({
+      "วันที่ในอีเมล": r.email_date, "ประเภทประกาศ (ล่าสุด)": TYPE[r.type],
+      "ประกาศของโครงการ": (r.stages || []).map(x => `${TYPE[x.type] || x.type} ${x.pub_date}`).join(" → "), "คะแนน": r.score, "ชื่อโครงการ": r.title, "หน่วยงาน": r.dept_name,
+      "จังหวัด": r.province || "", "งบประมาณ (บาท)": num(r.budget_thb) ?? "", "วันยื่นซอง": r.bid_date || "", "เวลายื่น": r.bid_time || "",
+      "คาดว่าจะประกาศ": monthLabel(r.expected_month), "วันที่ประกาศ": r.pub_date, "หมวดสินค้า": r.category || "", "เหตุผล": r.reason || "",
+      "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : missed(r) ? "เลยวันยื่นซอง ไม่มีใครอัปเดต" : "", "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "",
+      "ผู้ชนะ": r.winners || "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "", "ยกเลิกแล้ว": r.cancelled ? "ใช่" : "",
+      "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์": r.link })));
+  }
+
+  // ---------------- ติดตามสถานะ ----------------
+  const STAGES = [["all", "ทั้งหมด", () => true],
+    ["doing", "กำลังดำเนินการ", r => ["received", "contacted", "other"].includes(r.status) && !r.result],
+    ["mer", "รอ Mer", r => r.status === "sent_to_mer" && !r.result], ["merok", "Mer ตอบแล้ว", r => r.status === "mer_replied" && !r.result],
+    ["bid", "ยื่นราคาแล้ว รอผล", r => r.status === "bid" && !r.result], ["result", "มีผลแล้ว", r => !!r.result],
+    ["nobid", "ไม่ยื่น", r => r.status === "no_bid" && !r.result]];
+  const TSORTS = { latest: ["อัปเดตล่าสุด", (a, b) => String(b.status_at).localeCompare(String(a.status_at))],
+    deadline: ["ใกล้วันยื่นซอง", SORTS.deadline[1]], budget: ["งบสูงสุด", SORTS.budget[1]] };
+
+  function tracking(body) {
+    const T = state.t;
+    // by the Bangkok day of the latest status update
+    const bkkDay = t => new Date(new Date(t).getTime() + 7 * 3600e3).toISOString().slice(0, 10);
+    const inRange = state.tracking.filter(areaOk).filter(r => { const d = bkkDay(r.status_at); return d >= state.per.tracking.from && d <= state.per.tracking.to; });
+    const people = [...new Set(inRange.map(r => r.status_by).filter(Boolean))].sort((a, b) => a.localeCompare(b, "th"));
+    if (T.who !== "all" && !people.includes(T.who)) T.who = "all";
+    const base = inRange.filter(r => T.who === "all" || r.status_by === T.who);
+    const rows = base.filter(STAGES.find(x => x[0] === T.col)[2]).sort(TSORTS[T.sort][1]);
+    const row = r => { const left = daysTo(r.bid_date);
+      return `<a class="lead" href="${href({ lead: r.lead_key, from: "tracking" })}">
+      <div style="display:grid;gap:5px;min-width:0">
+        <div class="badges">${r.auto_result ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(r.status)}${resultPill(r.result)}${changePill(r)}${r.type ? `<span class="pill type">${esc(TYPE[r.type] || r.type)}</span>` : ""}${methodPill(r.method)}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</div>
+        <div class="title">${esc(r.title || r.lead_key)}</div>
+        <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>
+          ${r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : " · ปิดแล้ว"}</span>` : ""}</div>
+        <div class="meta">${r.auto_result ? `<span>ระบบพบผลจากประกาศผู้ชนะ · ${esc(thTime(r.status_at))} · ยื่นไปก่อนมีระบบ หรือไม่มีใครกดสถานะ</span>`
+          : `<span>อัปเดตโดย <b class="who-by">${esc(r.status_by || "–")}</b> · ${esc(thTime(r.status_at))}${r.n_events > 1 ? ` · ${r.n_events} ครั้ง` : ""}</span>`}
+          ${r.reasons && r.reasons.length ? `<span>เหตุผล: ${esc(r.reasons.join(", "))}</span>` : ""}${r.note ? `<span>“${esc(r.note)}”</span>` : ""}</div>
+      </div>
+      <div class="money"><span class="label">งบประมาณ</span>
+        <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
+        ${num(r.bid_price) !== null ? `<span class="small muted">ราคาที่ยื่น ${baht(r.bid_price)}</span>` : ""}
+        ${r.winner_price && r.result ? `<span class="small muted">ราคาที่ชนะ ${baht(r.winner_price)}</span>` : ""}
+        <span class="act btn sm ${mayEdit() && !closed(r) ? "primary" : ""}">${actLabel(r)}</span></div></a>`; };
+    body.innerHTML = `
+      <div class="card">
+        <div class="chips" role="group" aria-label="ขั้น">${STAGES.map(([k, l, f]) =>
+          `<button class="chip" type="button" data-col="${k}" aria-pressed="${T.col === k}">${l}<span class="n">${base.filter(f).length}</span></button>`).join("")}</div>
+        <div class="toolrow">
+          <div class="daterow"><label class="small muted" for="who-f">ผู้อัปเดต</label>
+            <select id="who-f"><option value="all">ทุกคน (${inRange.length})</option>${people.map(n => `<option value="${esc(n)}" ${T.who === n ? "selected" : ""}>${esc(n)} (${inRange.filter(r => r.status_by === n).length})</option>`).join("")}</select></div>
+          <div class="daterow"><label class="small muted" for="tsort">เรียง</label>
+            <select id="tsort">${Object.entries(TSORTS).map(([k, [l]]) => `<option value="${k}" ${T.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+        </div>
+        <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))}</div>
+      </div>
+      <div class="list">${rows.slice(0, T.shown).map(row).join("") || `<div class="card empty">ไม่มีโครงการในขั้นนี้ · ลองเลือก “ทั้งหมด” ขยายช่วงวันที่${state.area !== "all" ? " หรือเปลี่ยนพื้นที่" : ""}</div>`}</div>
+      ${rows.length > T.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - T.shown})</button></div>` : ""}`;
+    body.querySelectorAll("[data-col]").forEach(b => b.onclick = () => { T.col = b.dataset.col; T.shown = 50; tracking(body); });
+    document.getElementById("who-f").onchange = e => { T.who = e.target.value; T.shown = 50; tracking(body); };
+    document.getElementById("tsort").onchange = e => { T.sort = e.target.value; tracking(body); };
+    const more = document.getElementById("more"); if (more) more.onclick = () => { T.shown += 50; tracking(body); };
+  }
+
+  // ---------------- ผลลัพธ์ ----------------
+  function results(body, redraw) {
+    const R = state.r;
+    const area = state.outcomes.filter(areaOk);
+    const outs = area.filter(o => inBand(R.score, o)).filter(o => inMethod(R.method, o));
+    const res = outs.filter(o => o.kind === "result");
+    const byPrice = (a, b) => (num(b.winner_price) || 0) - (num(a.winner_price) || 0);
+    const wins = res.filter(o => o.ours).sort(byPrice);
+    const leadWins = wins.filter(o => o.lead_types), otherWins = wins.filter(o => !o.lead_types);
+    const leadRes = res.filter(o => o.lead_types).sort(byPrice);
+    const lost = leadRes.filter(o => !o.ours);
+    const cancelled = outs.filter(o => o.kind === "cancelled");
+    const changed = outs.filter(o => o.kind === "changed");
+    const rivals = {};
+    res.filter(o => !o.ours && o.winners).forEach(o => { const r = rivals[o.winners] || (rivals[o.winners] = { n: 0, v: 0, rows: [] }); r.n++; r.v += num(o.winner_price) || 0; r.rows.push(o); });
+    const top = Object.entries(rivals).sort((a, b) => b[1].n - a[1].n || b[1].v - a[1].v).slice(0, 10);
+    const q = R.q.trim().toLowerCase();
+    const all = res.filter(o => !q || `${o.title} ${o.dept_name} ${o.winners} ${o.province || ""}`.toLowerCase().includes(q)).sort(byPrice);
+    const proj = o => `${o.project_no ? `<a href="${href({ lead: o.project_no, from: "results" })}">${esc(o.title)}</a>` : esc(o.title)}
+      <a class="small" href="${esc(o.link)}" target="_blank" rel="noopener noreferrer" title="เปิดเอกสารประกาศใน e-GP">เอกสาร e-GP ↗</a>
+      ${methodPill(o.method)}${o.kind === "result" ? changePill(o) : ""}`;
+    const where = o => `${esc(o.dept_name || "")}<div class="small muted">${esc(o.province || "ไม่ระบุจังหวัด")}</div>`;
+    const winner = o => isOurs(o.winners) ? '<span class="pill win">🏆 OfficeMate</span>' : esc(o.winners || "–");
+    const table = (head, rows) => rows.length ? `<div class="tbl"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`
+      : '<div class="small muted">ไม่มีรายการในช่วงนี้</div>';
+
+    // What each tile opens. The open list sits right under the tiles.
+    const DETAIL = {
+      wins: ["🏆 OfficeMate ชนะ", "งานแข่งขันทั้งหมดที่เราชนะ รวมที่ไม่ได้มาจาก Lead · ไม่รวมเฉพาะเจาะจงที่ไม่เคยเป็น Lead", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "มาจาก Lead"],
+        wins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
+          <td>${o.lead_types ? esc(o.lead_types.map(t => TYPE[t] || t).join(", ")) : '<span class="muted">ไม่มี</span>'}</td></tr>`))],
+      // opened from ภาพรวม's "OfficeMate ชนะ (จาก Lead)" tile
+      leadwins: ["🏆 OfficeMate ชนะ (จาก Lead)", "งานที่เคยส่งเป็น Lead (ร่าง TOR / ราคากลาง / ประกาศเชิญชวน) ก่อนประกาศผู้ชนะ", () => table(["โครงการ", "หน่วยงาน", "ราคาที่ชนะ", "เคยเป็น Lead"],
+        leadWins.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.winner_price)}</td>
+          <td>${esc(o.lead_types.map(t => TYPE[t] || t).join(", "))}</td></tr>`))],
+      leadres: ["Lead ที่ประกาศผลแล้ว", "โครงการที่เคยส่งเป็น Lead (ร่าง TOR / ราคากลาง / ประกาศเชิญชวน) และประกาศผู้ชนะแล้ว", () => table(["โครงการ", "ผล", "ผู้ชนะ", "ราคาที่ชนะ", "งบ"],
+        leadRes.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")}</div></td>
+          <td>${o.ours ? '<span class="pill win">เราชนะ</span>' : '<span class="pill bad">บริษัทอื่นชนะ</span>'}</td><td>${winner(o)}</td>
+          <td class="num money">${baht(o.winner_price)}</td><td class="num">${baht(o.budget_thb)}</td></tr>`))],
+      lost: ["Lead ที่บริษัทอื่นชนะ", "ใครชนะ ด้วยราคาเท่าไร เทียบกับงบ", () => table(["โครงการ", "ผู้ชนะ", "ราคาที่ชนะ", "งบ"],
+        lost.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")}</div></td><td>${winner(o)}</td>
+          <td class="num money">${baht(o.winner_price)}</td><td class="num">${baht(o.budget_thb)}</td></tr>`))],
+      changed: ["ผลที่เปลี่ยนแปลง", "หน่วยงานเปลี่ยนผู้ชนะ (W2) หรือยกเลิกผู้ชนะ (W1) · ดึงทุกวันศุกร์ · “ตอนนี้” = ประกาศผู้ชนะฉบับล่าสุด อัปเดตเองเมื่อมีประกาศใหม่", () => table(["โครงการ", "ประกาศ", "เดิม", "ตอนนี้"],
+        changed.map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")} · ประกาศ ${esc(thDate(o.pub_date))}</div></td>
+          <td>${o.change_type === "W1" ? '<span class="pill warn">ยกเลิกผู้ชนะ</span>' : '<span class="pill warn">เปลี่ยนผู้ชนะ</span>'}</td>
+          <td>${esc(o.prev_winners || "–")}</td>
+          <td>${o.withdrawn ? "รอประกาศใหม่" : o.winners ? `${winner(o)} · ${baht(o.winner_price)}` : "ประกาศผู้ชนะแล้ว (ยังอ่านชื่อไม่ได้)"}</td></tr>`))],
+      cancelled: ["Lead ถูกยกเลิก", "มีประกาศยกเลิก (D1) ของโครงการที่เคยส่งเป็น Lead", () => table(["โครงการ", "หน่วยงาน", "งบ"],
+        cancelled.map(o => `<tr><td>${proj(o)}</td><td>${where(o)}</td><td class="num money">${baht(o.budget_thb)}</td></tr>`))],
+    };
+    const tile = (k, cls, label, value, ...subs) => `<button type="button" class="kpi ${cls}" data-detail="${k}" aria-expanded="${R.open === k}">
+      <span class="label">${label}</span><span class="value">${value}</span>${subs.map(s => `<span class="sub">${s}</span>`).join("")}<span class="hint">${R.open === k ? "ซ่อนรายการ ▲" : "ดูรายการ ▼"}</span></button>`;
+    const open = R.open && DETAIL[R.open];
+    const rivalRows = top.map(([n, r]) => `<tr class="clickable" data-rival="${esc(n)}" aria-expanded="${R.rival === n}"><td>${R.rival === n ? "▾" : "▸"} ${esc(n)}</td><td class="num">${r.n}</td><td class="num money">${short(r.v)}</td></tr>`
+      + (R.rival === n ? `<tr class="sub"><td colspan="3"><div class="small muted" style="margin-bottom:4px">โครงการที่ ${esc(n)} ชนะในช่วงนี้</div>
+        ${r.rows.sort(byPrice).map(o => `<div class="mini"><span class="t">${proj(o)}</span><span class="amt">${baht(o.winner_price)}</span><span class="small muted">${esc(o.dept_name || "")} · ${esc(o.province || "ไม่ระบุจังหวัด")} · ประกาศ ${esc(thDate(o.pub_date))}</span></div>`).join("")}</td></tr>` : ""));
+    body.innerHTML = `
+      <div class="card frows">${methodChips(R.method, area.filter(o => inBand(R.score, o)))}${scoreChips(R.score, area.filter(o => inMethod(R.method, o)))}</div>
+      <div class="kpis">
+        ${tile("wins", "win", "OfficeMate ชนะ (ทุกงาน)", wins.length, `มูลค่า ${baht(sum(wins, "winner_price"))}`,
+          `จาก Lead ${leadWins.length} · ไม่ผ่าน Lead ${otherWins.length}`)}
+        ${tile("leadres", "", "Lead ที่ประกาศผลแล้ว", leadRes.length, `เราชนะ ${leadRes.filter(o => o.ours).length} · บริษัทอื่นชนะ ${lost.length}`)}
+        ${tile("lost", "alert", "Lead ที่บริษัทอื่นชนะ", lost.length, `มูลค่า ${short(sum(lost, "winner_price"))}`)}
+        ${tile("cancelled", "", "Lead ถูกยกเลิก", cancelled.length, "ประกาศยกเลิก (D1)")}
+        ${tile("changed", "", "ผลที่เปลี่ยนแปลง", changed.length, `เปลี่ยนผู้ชนะ ${changed.filter(o => o.change_type !== "W1").length} · ยกเลิก ${changed.filter(o => o.change_type === "W1").length}`)}
+      </div>
+      ${open ? `<div class="card detail" id="detail"><div class="section-head"><h2>${open[0]}</h2><span class="small muted">${open[1]}</span></div>${open[2]()}</div>` : ""}
+      <div class="grid2">
+        <div class="card"><div class="section-head"><h2>🏆 OfficeMate ชนะ</h2><span class="small muted">งานแข่งขัน และงานที่เคยเป็น Lead</span></div>
+          ${table(["โครงการ", "ราคาที่ชนะ"], wins.slice(0, 8).map(o => `<tr><td>${proj(o)}<div class="small muted">${esc(o.dept_name || "")}</div></td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
+          ${wins.length > 8 ? `<div><button class="btn sm" type="button" data-detail="wins">ดูทั้งหมด ${wins.length} รายการ</button></div>` : ""}</div>
+        <div class="card"><div class="section-head"><h2>คู่แข่งที่ชนะบ่อย</h2><span class="small muted">กดชื่อเพื่อดูโครงการที่ชนะ</span></div>
+          ${top.length ? table(["ผู้ชนะ", "ครั้ง", "มูลค่ารวม"], [rivalRows.join("")]) : '<div class="small muted">ไม่มีรายการในช่วงนี้</div>'}</div>
+      </div>
+      <div class="card"><div class="section-head"><h2>ประกาศผู้ชนะทั้งหมด</h2><span class="small muted">${all.length.toLocaleString("th-TH")} รายการ · หมวดสินค้าของเรา · ไม่รวมเฉพาะเจาะจงที่ไม่เคยเป็น Lead</span></div>
+        <div class="toolrow"><input class="txt" id="rq" type="search" placeholder="ค้นหาโครงการ หน่วยงาน ผู้ชนะ" value="${esc(R.q)}" aria-label="ค้นหาผลผู้ชนะ">
+          <button class="btn" type="button" id="dl">⬇ Excel</button></div>
+        ${table(["โครงการ", "หน่วยงาน", "ผู้ชนะ", "ราคาที่ชนะ"], all.slice(0, R.shown).map(o => `<tr><td>${proj(o)}<div class="small muted">ประกาศ ${esc(thDate(o.pub_date))}</div></td><td>${where(o)}</td>
+          <td>${winner(o)}</td><td class="num money">${baht(o.winner_price)}</td></tr>`))}
+        ${all.length > R.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${all.length - R.shown})</button></div>` : ""}</div>`;
+    body.querySelectorAll("[data-detail]").forEach(b => b.onclick = () => {
+      const k = b.dataset.detail;
+      R.open = R.open === k && b.classList.contains("kpi") ? null : k;
+      results(body, redraw);
+      if (R.open) document.getElementById("detail")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { R.score = b.dataset.score; R.shown = 100; results(body, redraw); });
+    body.querySelectorAll("[data-method]").forEach(b => b.onclick = () => { R.method = b.dataset.method; R.shown = 100; results(body, redraw); });
+    body.querySelectorAll("[data-rival]").forEach(tr => tr.onclick = () => { R.rival = R.rival === tr.dataset.rival ? null : tr.dataset.rival; results(body, redraw); });
+    const qi = document.getElementById("rq");
+    qi.oninput = () => { R.q = qi.value; const p = qi.selectionStart; results(body, redraw); const n = document.getElementById("rq"); n.focus(); n.setSelectionRange(p, p); };
+    const more = document.getElementById("more"); if (more) more.onclick = () => { R.shown += 100; results(body, redraw); };
+    document.getElementById("dl").onclick = () => download("ผลลัพธ์", outs.filter(o => o.kind !== "changed").map(o => ({
+      "วันที่ในอีเมล": o.email_date, "วิธีจัดหา": o.method || "", "ผลลัพธ์": o.kind === "cancelled" ? "Lead ถูกยกเลิก" : o.ours ? "OfficeMate ชนะ" : o.lead_types ? "บริษัทอื่นชนะ (เคยเป็น Lead)" : "บริษัทอื่นชนะ",
+      "ชื่อโครงการ": o.title, "หน่วยงาน": o.dept_name, "จังหวัด": o.province || "", "ผู้ชนะ": o.winners || "", "ราคาที่ชนะ (บาท)": num(o.winner_price) ?? "",
+      "งบประมาณ (บาท)": num(o.budget_thb) ?? "", "เคยส่งเป็น Lead (ประเภท)": (o.lead_types || []).map(t => TYPE[t] || t).join(", "),
+      "วันที่ประกาศ": o.pub_date, "เลขโครงการ": o.project_no || "", "ลิงก์": o.link })));
+  }
+
+  // ---------------- คู่มือ ----------------
+  function guide() {
+    main.innerHTML = `<div class="grid2">
+      <div class="card legend"><h2>หน้าต่างทั้งหมด</h2><dl>
+        <dt>1. Lead</dt><dd>โอกาสขาย (แผน ร่าง TOR ราคากลาง ประกาศเชิญชวน) 1 โครงการแสดงครั้งเดียวตามประกาศล่าสุด เรียงคะแนนสูงสุดแล้วงบสูงสุด กดรายการเพื่ออัปเดตสถานะ · เริ่มต้น: ฉบับล่าสุด ประกาศเชิญชวน</dd>
+        <dt>2. ติดตามสถานะ</dt><dd>โครงการที่มีคนอัปเดตสถานะแล้ว รวมงานที่ OfficeMate ชนะแม้ไม่มีใครกดสถานะ เลือกดูตามขั้นและตามคนที่อัปเดต นับตามวันที่อัปเดตล่าสุด · เริ่มต้น: เดือนนี้</dd>
+        <dt>3. ผลลัพธ์</dt><dd>ใครชนะ เราชนะเท่าไร คู่แข่งที่ชนะบ่อย ผลที่เปลี่ยนแปลง และประกาศผู้ชนะทั้งหมด ของงานแข่งขัน (e-bidding, e-market, คัดเลือก ฯลฯ) และงานที่เคยเป็น Lead ไม่รวมงานเฉพาะเจาะจงที่ไม่เคยเป็น Lead กดกล่องหรือชื่อคู่แข่งเพื่อดูรายการ กดชื่อโครงการเพื่อเปิดหน้าโครงการ · เริ่มต้น: เดือนนี้</dd>
+        <dt>4. ภาพรวม</dt><dd>สรุปช่วงเวลาที่เลือก: จำนวน Lead และงบรวม · Lead แยกตามประเภท (เรียงตามลำดับที่รัฐประกาศ แผน → ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) รวม Lead ที่เลยวันยื่นซองโดยไม่มีใครอัปเดต · Lead งบสูงสุด · ความคืบหน้า · งานใกล้ปิดรับซอง · เริ่มต้น: เดือนนี้</dd></dl>
+        <h2>ช่วงเวลาและพื้นที่</h2><dl>
+        <dt>วันที่</dt><dd>วันของอีเมลเช้าที่มีรายการนั้น (ระบบดึงข้อมูลหลังเลิกงานวันก่อนหน้า) ข้อมูลเริ่ม 9 ต.ค. 2569</dd>
+        <dt>กทม. และปริมณฑล</dt><dd>15 จังหวัดเป้าหมาย${state.provinces.length ? ` (${esc(state.provinces.join(", "))})` : ""} รวมประกาศที่ระบุจังหวัดไม่ได้ ซึ่งส่วนใหญ่เป็นหน่วยงานส่วนกลาง</dd>
+        <dt>เลยวันยื่นซอง ไม่มีใครอัปเดต</dt><dd>ประกาศเชิญชวนที่ปิดรับซองแล้ว แต่ไม่มีใครกดสถานะเลย</dd>
+        <dt>ปุ่มช่วงเวลา</dt><dd>ฉบับล่าสุด = อีเมลเช้าล่าสุด · 7 วัน = 7 วันล่าสุดรวมวันนี้ · เดือนนี้ = วันที่ 1 ถึงวันนี้ · ${fyLabel()} = ปีงบประมาณราชการ 1 ต.ค. ถึงวันนี้ (ปีงบสิ้นสุด 30 ก.ย. ปุ่มเปลี่ยนเป็นปีถัดไปเองทุก 1 ต.ค.) · ช่วงอื่น เช่น เดือนที่แล้ว ไตรมาส หรือปีงบก่อน ใช้ “กำหนดเอง”</dd>
+        <dt>🔗 จับคู่กับแผน</dt><dd>แผนจัดซื้อที่ต่อมาประกาศจริง (หน่วยงานเดียวกัน งบเท่ากันพอดี ประกาศหลังแผน และจับคู่ได้คู่เดียว) รวมเป็นโครงการเดียว สถานะที่กดไว้ตอนเป็นแผนย้ายตามมาด้วย</dd>
+        <dt>งบประมาณ</dt><dd>ราคากลางจากประกาศขั้นล่าสุดของโครงการที่ระบุงบ (ประกาศเชิญชวน ถ้าไม่มีใช้ราคากลาง → ร่าง TOR → แผน) ใช้ตัวเลขเดียวกันทุกหน้าและในอีเมลเช้า</dd>
+        <dt>ประกาศล่าสุด</dt><dd>โครงการที่มีหลายประกาศนับครั้งเดียวที่ขั้นที่ไปถึงล่าสุด เช่น มีแผน ร่าง TOR และประกาศเชิญชวน นับเป็นประกาศเชิญชวน</dd></dl></div>
+      <div class="card legend"><h2>ประเภทประกาศ</h2><div class="small muted">เรียงตามลำดับที่หน่วยงานประกาศใน e-GP โครงการหนึ่งอาจไม่มีครบทุกขั้น</div><dl>${TYPE_ORDER.map(k => `<dt>${TYPE[k]} (${k})</dt><dd>${TYPE_MEANING[k]}</dd>`).join("")}</dl>
+        <h2>คะแนน</h2><dl><dt>${scoreBadge(90)} 100–90</dt><dd>สินค้าหลัก: วัสดุสำนักงาน กระดาษ หมึกพิมพ์ เครื่องเขียน</dd>
+        <dt>${scoreBadge(75)} 89–75</dt><dd>ซื้อ/เช่า คอมพิวเตอร์และไอที เฟอร์นิเจอร์ เครื่องใช้สำนักงาน</dd>
+        <dt>${scoreBadge(60)} 74–60</dt><dd>โครงการผสม มีสินค้าของเราเป็นส่วนสำคัญ</dd>
+        <dt>${scoreBadge(50)} 59–50</dt><dd>ก้ำกึ่ง: เครื่องใช้ไฟฟ้า เครื่องมือช่าง อุปกรณ์ความปลอดภัย</dd></dl>
+        <h2>สถานะ</h2><dl>${Object.entries(STATUS).map(([k, v]) => `<dt>${v}</dt><dd>${STATUS_MEANING[k]}</dd>`).join("")}</dl></div>
+      <div class="gcol"><div class="card legend"><h2>วิธีจัดหา</h2><dl>
+        <dt>e-bidding</dt><dd>ประกวดราคาอิเล็กทรอนิกส์ ยื่นเอกสารและราคาในระบบ e-GP ภายในวันยื่นซอง (วงเงินเกิน 5 แสนบาท)</dd>
+        <dt>e-market</dt><dd>สินค้าทั่วไปที่มีสเปกในแคตตาล็อก e-GP ยื่นราคาในระบบ e-GP</dd>
+        <dt>เฉพาะเจาะจง</dt><dd>หน่วยงานเชิญผู้ขายเอง ส่วนใหญ่ไม่เกิน 5 แสนบาท ไม่มีประกาศล่วงหน้าให้ยื่น จึงไม่แสดงใน KG Lead ยกเว้นงานที่เคยเป็น Lead (มีร่าง TOR / ราคากลาง / ประกาศเชิญชวนก่อน) ข้อมูลยังเก็บไว้ในระบบ</dd>
+        <dt>อื่น ๆ</dt><dd>คัดเลือก สอบราคา เฉพาะเจาะจงที่เคยเป็น Lead และแผนจัดซื้อ (e-GP ไม่บอกวิธีจัดหาของแผน)</dd></dl></div>
+      <div class="card legend"><h2>ผลและป้าย</h2><dl>
+        <dt>${resultPill("win")}</dt><dd>ประกาศผู้ชนะเป็น บริษัท ออฟฟิศเมท (ไทย) จำกัด</dd>
+        <dt>${resultPill("lost")}</dt><dd>มีคนกด “ยื่นราคาแล้ว” แต่บริษัทอื่นชนะ</dd>
+        <dt>${resultPill("other_won")}</dt><dd>บริษัทอื่นชนะ และเราไม่ได้กดยื่น</dd>
+        <dt><span class="pill warn">🔄 เปลี่ยนผู้ชนะ</span></dt><dd>หน่วยงานเปลี่ยนผู้ชนะ (W2) ระบบใช้ผู้ชนะใหม่ ผลชนะ/แพ้เปลี่ยนตามเอง</dd>
+        <dt><span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ</span></dt><dd>หน่วยงานยกเลิกผู้ชนะ (W1) โครงการกลับไปรอผล กดอัปเดตสถานะได้อีกครั้ง</dd>
+        <dt>โครงการหายจากหน้า Lead</dt><dd>เมื่อมีประกาศผู้ชนะแล้ว โครงการไม่ใช่ Lead อีก ดูต่อได้ในผลลัพธ์และติดตามสถานะ (บรรทัดใต้ตัวกรองบอกจำนวนที่ซ่อน)</dd>
+        <dt>หลังประกาศผู้ชนะ</dt><dd>ในหน้าโครงการยังบันทึกย้อนหลังได้ 2 อย่าง: “ยื่นราคาแล้ว” (ผลเปลี่ยนจาก บริษัทอื่นชนะ เป็น แพ้ และนับในยื่นราคาแล้ว) และ “ไม่ยื่น” สถานะอื่นปิด · ในประวัติมีป้าย “บันทึกหลังประกาศผล” · โครงการที่ถูกยกเลิกปิดการอัปเดตทั้งหมด</dd>
+        <dt>W1 / W2</dt><dd>ระบบดึงประกาศยกเลิกและเปลี่ยนผู้ชนะทุกวันศุกร์ เห็นผลวันจันทร์</dd>
+        <dt>การบันทึกการใช้งาน</dt><dd>ระบบบันทึกว่าบัญชีไหนเปิดหน้าไหนเมื่อไร เพื่อดูภาพรวมการใช้งาน ไม่เก็บ IP เก็บย้อนหลัง 180 วัน</dd></dl></div></div></div>`;
+  }
+
+  // ---------------- one lead ----------------
+  let current = null;
+
+  async function showLead(key, from) {
+    main.innerHTML = `<div><a href="${href({ v: from || "leads" })}">← กลับ</a></div><div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>`;
+    try {
+      const data = await api("lead", { key });
+      current = { key: data.lead_key || key, from: from || "leads", data, status: null, reasons: new Set() };
+      renderLead();
+    } catch (e) { main.innerHTML = `<div><a href="${href({ v: from || "leads" })}">← กลับ</a></div><div class="card empty error">${esc(e.message)}</div>`; }
+  }
+
+  function leadSummary(anns) {
+    const order = ["D0", "15", "B0", "P0"];
+    const main0 = [...anns].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)).find(a => order.includes(a.type)) || anns[0];
+    return { main: main0, budget: latestBudget(anns), d0: anns.find(a => a.type === "D0" && a.bid_date),
+      // latest winner announcement: W0, W2 (changed) or W1 (withdrawn), by e-GP's seqNo (as project_award)
+      award: [...anns].filter(a => ["W0", "W1", "W2"].includes(a.type))
+        .sort((a, b) => seqNo(a.link) - seqNo(b.link) || String(a.pub_date).localeCompare(String(b.pub_date))).pop(),
+      province: anns.map(a => a.province).find(Boolean) || "" };
+  }
+
+  function renderLead() {
+    const { data } = current;
+    const anns = data.announcements, s = leadSummary(anns), isDV = EDITORS.includes(data.user.role);
+    const events = data.events || [], last = events[events.length - 1];
+    const left = s.d0 ? daysTo(s.d0.bid_date) : null;
+    const aw = s.award, named = aw && Array.isArray(aw.winners) && aw.winners.length ? aw.winners.join(", ") : null;
+    const outcome = aw ? (aw.type === "W1" ? '<span class="pill warn">🔄 ยกเลิกประกาศผู้ชนะ รอประกาศใหม่</span>'
+        : (!named ? '<span class="pill">ประกาศผู้ชนะแล้ว</span>'
+          : isOurs(named) ? `<span class="pill win">🏆 OfficeMate ชนะ · ${baht(aw.winner_price)}</span>`
+          : `<span class="pill bad">ผู้ชนะ: ${esc(named)} · ${baht(aw.winner_price)}</span>`)
+          + (aw.type === "W2" ? '<span class="pill warn">🔄 เปลี่ยนผู้ชนะ</span>' : ""))
+      : anns.some(a => a.type === "D1") ? '<span class="pill bad">ยกเลิกโครงการ</span>' : "";
+    const awarded = !!aw && aw.type !== "W1";
+    const locked = awarded || anns.some(a => a.type === "D1");
+    // After the winner is announced only "ยื่นราคาแล้ว" / "ไม่ยื่น" can still be recorded, for a Sale who bid
+    // (or decided not to) and forgot to press it: a recorded bid turns "บริษัทอื่นชนะ" into "แพ้" and counts
+    // in ยื่นราคาแล้ว. Steps before the result (รับเรื่อง, ส่งให้ Mer …) stay closed. A cancelled project stays closed.
+    const retro = awarded && !anns.some(a => a.type === "D1");
+    const awardDay = awarded ? aw.pub_date : null;
+    const afterResult = e => !!awardDay && new Date(new Date(e.at).getTime() + 7 * 3600e3).toISOString().slice(0, 10) >= awardDay;
+    const groups = retro ? [["บันทึกหลังประกาศผล", ["bid", "no_bid"]]] : GROUPS;
+    const form = isDV && locked && !retro ? `<div class="card"><h2>อัปเดตสถานะ</h2><div class="small muted">โครงการนี้ถูกยกเลิกแล้ว จึงปิดการอัปเดตสถานะ · ผลดูได้ที่แท็บ ผลลัพธ์ และ ติดตามสถานะ</div></div>`
+      : isDV ? `<div class="card" id="form"><h2>${retro ? "บันทึกย้อนหลัง" : "อัปเดตสถานะ"}</h2>
+        ${retro ? '<div class="small muted">ประกาศผู้ชนะแล้ว ถ้ายื่นราคาไปแล้วหรือตัดสินใจไม่ยื่นแต่ยังไม่ได้กด บันทึกได้ที่นี่ (ผลจะเปลี่ยนจาก “บริษัทอื่นชนะ” เป็น “แพ้” เมื่อบันทึกว่ายื่นแล้ว)</div>' : ""}
+        ${groups.map(([label, keys]) => `<div class="group"><span>${label}</span><div class="chips">${keys.map(k => `<button class="btn" type="button" data-s="${k}" aria-pressed="${current.status === k}">${STATUS[k]}</button>`).join("")}</div></div>`).join("")}
+        <div class="group" id="reasons" ${current.status === "no_bid" ? "" : "hidden"}><span>เหตุผลที่ไม่ยื่น (เลือกได้หลายข้อ)</span>
+          <div class="chips">${REASONS.map(r => `<button class="chip reason" type="button" aria-pressed="${current.reasons.has(r)}">${r}</button>`).join("")}</div></div>
+        <label class="fld" id="pricebox" ${current.status === "bid" ? "" : "hidden"}>ราคาที่ยื่น (บาท) ไม่บังคับ<input class="txt" id="price" inputmode="decimal" placeholder="เช่น 1,180,000"></label>
+        <label class="fld">หมายเหตุ <span id="notehint">${current.status === "other" ? "(ต้องใส่สำหรับ “อื่น ๆ”)" : "(ไม่บังคับ)"}</span><textarea id="note" rows="2" placeholder="เช่น นัดคุยฝ่ายพัสดุวันพฤหัส"></textarea></label>
+        <div><button class="btn primary" type="button" id="save">บันทึก</button></div><div class="msg" id="msg" aria-live="polite"></div></div>` : "";
+    main.innerHTML = `
+      <div><a href="${href({ v: current.from })}">← กลับ</a></div>
+      <div class="card hero">
+        <div style="display:grid;gap:6px;min-width:0">
+          <div class="chips"><span class="pill type">${esc(TYPE[s.main.type] || s.main.type)}</span>${!last && awarded ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(last && last.status)}${outcome}</div>
+          <h1>${esc(s.main.title)}</h1>
+          <div class="meta"><span>${esc(s.main.dept_name)}</span><span>${esc(s.province || "ไม่ระบุจังหวัด")}</span>
+            ${s.d0 ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(s.d0.bid_date))} ${esc(s.d0.bid_time || "")}${left !== null && left >= 0 ? ` · ${dueText(s.d0.bid_date)}` : ""}</span>` : ""}
+            <span>${esc(current.key.startsWith("P:") ? "เลขแผน " + current.key.slice(2) : "เลขโครงการ " + current.key)}</span>
+            ${data.linked_plan ? `<span>🔗 จับคู่กับแผน ${esc(data.linked_plan)}</span>` : ""}</div>
+        </div>
+        <div><div class="small muted amt-label">งบประมาณ</div><div class="amt">${s.budget === null ? '<span class="muted" style="font-size:16px">ไม่ระบุงบ</span>' : baht(s.budget)}</div></div>
+      </div>
+      <div class="two">
+        <div style="display:grid;gap:14px">${form}
+          <div class="card"><h2>ประวัติ</h2><div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}${afterResult(e) ? ' · <span class="pill">บันทึกหลังประกาศผล</span>' : ""}</div>
+            <div>${esc(STATUS[e.status] || e.status)}${e.reasons && e.reasons.length ? " · " + esc(e.reasons.join(", ")) : ""}${e.bid_price !== null && e.bid_price !== undefined ? " · " + baht(e.bid_price) : ""}</div>
+            ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
+        </div>
+        <div class="side" style="display:grid;gap:14px">
+          <div class="card"><h2>ประกาศของโครงการนี้</h2><div>${anns.map(a => `<div class="ann">
+            <div class="small muted">${esc(TYPE[a.type] || a.type)} · ประกาศ ${esc(thDate(a.pub_date))}</div>
+            <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">${esc(a.title)}</a>
+            <div class="meta">${num(a.budget_thb) !== null ? `<span>งบ ${baht(a.budget_thb)}</span>` : ""}${a.bid_date ? `<span>ยื่นซอง ${esc(thDate(a.bid_date))} ${esc(a.bid_time || "")}</span>` : ""}
+              ${a.expected_month ? `<span>คาดว่าจะประกาศ ${esc(monthLabel(a.expected_month))}</span>` : ""}${Array.isArray(a.winners) && a.winners.length ? `<span>ผู้ชนะ ${esc(a.winners.join(", "))} · ${baht(a.winner_price)}</span>` : ""}
+              ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("")}</div></div>
+        </div>
+      </div>`;
+    if (!isDV || (locked && !retro)) return;
+    const f = document.getElementById("form");
+    f.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
+      current.status = b.dataset.s;
+      f.querySelectorAll("[data-s]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      document.getElementById("reasons").hidden = current.status !== "no_bid";
+      document.getElementById("pricebox").hidden = current.status !== "bid";
+      document.getElementById("notehint").textContent = current.status === "other" ? "(ต้องใส่สำหรับ “อื่น ๆ”)" : "(ไม่บังคับ)";
+      document.getElementById("msg").textContent = "";
+    });
+    f.querySelectorAll(".reason").forEach(c => c.onclick = () => {
+      const r = c.textContent; if (current.reasons.has(r)) current.reasons.delete(r); else current.reasons.add(r);
+      c.setAttribute("aria-pressed", String(current.reasons.has(r)));
+    });
+    document.getElementById("save").onclick = async () => {
+      const msg = document.getElementById("msg"), btn = document.getElementById("save"), note = document.getElementById("note").value.trim();
+      const err = t => { msg.className = "msg err"; msg.textContent = t; };
+      if (!current.status) return err("เลือกสถานะก่อน แล้วกดบันทึก");
+      if (current.status === "no_bid" && !current.reasons.size) return err("เลือกเหตุผลที่ไม่ยื่นอย่างน้อย 1 ข้อ");
+      if (current.status === "other" && !note) return err("สถานะ “อื่น ๆ” ต้องใส่หมายเหตุ");
+      btn.disabled = true; msg.className = "msg"; msg.textContent = "กำลังบันทึก…";
+      try {
+        const res = await api("save", { key: current.key, status: current.status, reasons: [...current.reasons],
+          bid_price: current.status === "bid" ? document.getElementById("price").value.trim() : null, note });
+        current.data.events = res.events; current.status = null; current.reasons = new Set();
+        state.cache = {}; state.tracking = null;           // lists show the new status next time
+        renderLead();
+        const m = document.getElementById("msg"); m.className = "msg ok"; m.textContent = "บันทึกแล้ว";
+      } catch (e) { btn.disabled = false; err(e.message); }
+    };
+  }
+
+  // ---------------- routing ----------------
+  let currentView = "leads";
+
+  async function route() {
+    const p = hashParams();
+    if (!/^[0-9a-f]{64}$/.test(token())) {
+      renderNav(null);
+      main.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert</div>';
+      return;
+    }
+    window.scrollTo(0, 0);
+    const lead = p.get("lead");
+    const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
+    // a link with a filter value the page does not know (old or mistyped) falls back to the default
+    const methodKey = k => METHOD_FILTERS.some(f => f[0] === k) ? k : "all";
+    const known = (list, k, dflt) => list.some(f => f[0] === k) ? k : dflt;
+    if (p.get("status")) state.l.status = known(STATUS_FILTERS, p.get("status"), "all");
+    if (p.get("type")) { state.l.type = known(TYPE_FILTERS, p.get("type"), "all"); state.l.score = known(SCORE_FILTERS, p.get("score"), "all"); state.l.method = methodKey(p.get("method")); }
+    if (p.get("sort")) state.l.sort = SORTS[p.get("sort")] ? p.get("sort") : "score";
+    // ผลลัพธ์ opened from a ภาพรวม tile: same score / method, and the tile's list open
+    if (view === "results" && ["score", "method", "open"].some(k => p.has(k))) {
+      Object.assign(state.r, { score: known(SCORE_FILTERS, p.get("score"), "all"), method: methodKey(p.get("method")), open: p.get("open") || null, shown: 100 });
+    }
+    if (lead) { renderNav(p.get("from") || "leads"); ping("lead", true); return showLead(lead, p.get("from")); }
+    currentView = view;
+    renderNav(view);
+    try {
+      if (!state.days.length) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
+    } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    renderNav(view);  // now the account is known (the usage tab shows for admins only)
+    ping(view, true);
+    const sync = state.per[p.get("sync")];
+    if (sync && state.per[view] && sync !== state.per[view]) Object.assign(state.per[view], sync);
+    // The filters a link carried are applied once; the address keeps only the page, so a reload (Ctrl+F5)
+    // opens the defaults again instead of the filters of the last link.
+    if (["status", "type", "sort", "score", "method", "sync", "open"].some(k => p.has(k)))
+      history.replaceState(null, "", href({ v: view }));
+    if (view === "guide") return guide();
+    if (view === "usage") { currentView = "usage"; return usagePage(); }
+    if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
+    const build = { overview, leads: leadsPage, results }[view];
+    return page(view, build, { load: ensureRange });
+  }
+  addEventListener("hashchange", route);
+  route();
+})();
+</script>
+</body>
+</html>
