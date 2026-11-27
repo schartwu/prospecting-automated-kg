@@ -10,8 +10,14 @@
 //   board  -> leads of the last `days` days in Sales' provinces, with latest status and e-GP outcome
 //   lead   -> {announcements, events} of one lead
 //   save   -> add one status (role dv or sale; viewer only looks)
+//   assign -> hand a lead to a Sale (GXX), or take it back (can_assign accounts: DV, Tele, admin)
+//   assignments -> every lead handed out, for the มอบหมายงาน tab (DV, Tele, admin)
 //   ping   -> {device, view, visit}: the page is open (every minute) / a page was opened (visit = true)
 //   usage  -> who uses the web app (admin accounts only, ADMIN_EMAILS)
+//   (any action) as -> the admin views as another account, read only
+//
+// A Sale (role sale without can_assign) sees only the leads handed to them (phase 2, 27 Nov 2026): their
+// Lead list, ติดตามสถานะ and lead pages are cut here, not only hidden on the page.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
@@ -26,7 +32,7 @@ const PROVINCES = (Deno.env.get("TARGET_PROVINCES") ??
 
 // Who may read the usage summary. A function secret overrides it.
 const ADMIN_EMAILS = (Deno.env.get("ADMIN_EMAILS") ?? "schartwu@gmail.com").split(",").map((e) => e.trim().toLowerCase());
-const VIEWS = ["leads", "tracking", "results", "overview", "guide", "usage", "lead"];
+const VIEWS = ["leads", "tracking", "results", "overview", "assign", "guide", "usage", "lead"];
 
 // The statuses that can be saved, as the DV / SR process with KG Lead (26 Nov 2026). contacted and
 // sent_to_mer are no longer offered; older records keep them.
@@ -53,6 +59,43 @@ function reply(body: unknown, status = 200) {
   });
 }
 
+type Person = { id: number; name: string; role: string; can_assign: boolean; active: boolean };
+type Hand = { id: number; lead_key: string; assignee_id: number | null; assigned_by: number; assigned_at: string };
+type Current = { assignee_id: number; assignee: string; assigned_by: string; assigned_at: string };
+
+// Every hand-out with names; the latest row of a lead is who has it now (assignee_id null = taken back).
+async function handOuts() {
+  const [{ data: rows, error }, { data: people, error: pErr }] = await Promise.all([
+    db.from("lead_assignments").select("id, lead_key, assignee_id, assigned_by, assigned_at")
+      .order("assigned_at", { ascending: true }).order("id", { ascending: true }),
+    db.from("lead_users").select("id, name, role, can_assign, active").order("id"),
+  ]);
+  if (error || pErr) return null;
+  const name = new Map((people as Person[]).map((p) => [p.id, p.name]));
+  const history = (rows as Hand[]).map((h) => ({
+    lead_key: h.lead_key, assignee_id: h.assignee_id, assignee: h.assignee_id ? name.get(h.assignee_id) ?? "" : null,
+    assigned_by: name.get(h.assigned_by) ?? "", at: h.assigned_at,
+  }));
+  const current = new Map<string, Current>();
+  for (const h of history) {
+    if (h.assignee_id) {
+      current.set(h.lead_key, { assignee_id: h.assignee_id, assignee: h.assignee ?? "", assigned_by: h.assigned_by, assigned_at: h.at });
+    } else current.delete(h.lead_key);
+  }
+  // the Sales a lead can be handed to: active, role sale, not a DV / Tele account
+  const sales = (people as Person[]).filter((p) => p.active && p.role === "sale" && !p.can_assign)
+    .map((p) => ({ id: p.id, name: p.name }));
+  return { history, current, sales };
+}
+
+// who has each row's lead now, on every list row
+function withHand(rows: unknown[], current: Map<string, Current>) {
+  return rows.map((r) => {
+    const c = current.get(String((r as { lead_key?: string }).lead_key ?? ""));
+    return c ? { ...(r as object), ...c } : r;
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return reply({ error: "ใช้ POST เท่านั้น" }, 405);
@@ -66,15 +109,33 @@ Deno.serve(async (req) => {
   const token = typeof body.token === "string" ? body.token : "";
   if (!/^[0-9a-f]{64}$/.test(token)) return reply({ error: "ลิงก์ไม่ถูกต้อง" }, 401);
 
-  const { data: user, error: userErr } = await db.from("lead_users")
-    .select("id, name, role, email").eq("token", token).eq("active", true).maybeSingle();
+  const { data: self, error: userErr } = await db.from("lead_users")
+    .select("id, name, role, email, can_assign").eq("token", token).eq("active", true).maybeSingle();
   if (userErr) return reply({ error: "ระบบขัดข้อง ลองใหม่อีกครั้ง" }, 500);
-  if (!user) return reply({ error: "ลิงก์นี้ใช้ไม่ได้แล้ว ติดต่อผู้ดูแลระบบ" }, 401);
+  if (!self) return reply({ error: "ลิงก์นี้ใช้ไม่ได้แล้ว ติดต่อผู้ดูแลระบบ" }, 401);
+  // The admin can look through another account's eyes (body.as = its id), read only: to check what a
+  // Sale sees without their link. Saving, handing out and the usage log are off while doing so.
+  let user = self;
+  const viewingAs = ADMIN_EMAILS.includes(String(self.email).toLowerCase()) && Number.isInteger(body.as) && body.as !== self.id;
+  if (viewingAs) {
+    const { data: other } = await db.from("lead_users")
+      .select("id, name, role, email, can_assign").eq("id", body.as as number).eq("active", true).maybeSingle();
+    if (!other) return reply({ error: "ไม่พบบัญชีที่เลือก" }, 404);
+    user = other;
+  }
+  if (viewingAs && ["save", "assign", "usage"].includes(String(body.action))) {
+    return reply({ error: "กำลังดูในมุมมองของคนอื่น บันทึกไม่ได้ · กลับเป็นบัญชีของคุณก่อน" }, 403);
+  }
+  if (viewingAs && body.action === "ping") return reply({ ok: true });
   const admin = ADMIN_EMAILS.includes(String(user.email).toLowerCase());
+  const canAssign = !!user.can_assign;
+  const sr = user.role === "sale" && !canAssign;          // a Sale: sees only the leads handed to them
+  const me = { name: user.name, role: user.role, admin, can_assign: canAssign, sr, viewing_as: viewingAs ? user.id : null };
+  const NOT_YOURS = "งานนี้ไม่ได้มอบหมายให้คุณ ถ้าต้องการทำงานนี้ ติดต่อ DV";
 
   switch (body.action) {
     case "me":
-      return reply({ name: user.name, role: user.role, admin });
+      return reply(me);
 
     case "ping": {
       const device = String(body.device ?? ""), view = String(body.view ?? "");
@@ -89,47 +150,105 @@ Deno.serve(async (req) => {
       if (!admin) return reply({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
       const { data, error } = await db.rpc("web_usage", { p_exclude: ADMIN_EMAILS });
       if (error) return reply({ error: "โหลดข้อมูลการใช้งานไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role, admin }, ...data });
+      return reply({ user: me, ...data });
     }
 
     case "items":
     case "leads":
     case "outcomes": {
+      const hands = await handOuts();
+      if (!hands) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+      const extra = canAssign ? { sales: hands.sales } : {};
+      if (sr) {
+        // a Sale's Lead list: every lead handed to them, whatever its email day
+        if (body.action !== "leads") return reply({ error: "หน้านี้สำหรับ DV" }, 403);
+        const keys = [...hands.current].filter(([, c]) => c.assignee_id === user.id).map(([k]) => k);
+        if (!keys.length) return reply({ user: me, provinces: PROVINCES, rows: [] });
+        const { data, error } = await db.rpc("web_list_keys", { p_keys: keys });
+        if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
+        return reply({ user: me, provinces: PROVINCES, rows: withHand((data ?? []) as unknown[], hands.current) });
+      }
       // Lists by morning-email day: leads (D0/B0/15/P0), results (W0/D1), or both (items, the old Excel tab).
       const from = String(body.from ?? ""), to = String(body.to ?? "");
       const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d));
       if (!ok(from) || !ok(to) || from > to) return reply({ error: "เลือกช่วงวันที่ให้ถูกต้อง" }, 400);
       const { data, error } = await allRows(body.action as string, { p_from: from, p_to: to });
       if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role, admin }, provinces: PROVINCES, rows: data });
+      return reply({ user: me, provinces: PROVINCES, rows: withHand(data, hands.current), ...extra });
     }
 
     case "tracking": {
-      const { data, error } = await allRows("tracking");
-      if (error) return reply({ error: "โหลดรายการติดตามไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role, admin }, provinces: PROVINCES, rows: data });
+      const [{ data, error }, hands] = await Promise.all([allRows("tracking"), handOuts()]);
+      if (error || !hands) return reply({ error: "โหลดรายการติดตามไม่สำเร็จ" }, 500);
+      const rows = withHand(data, hands.current) as { assignee_id?: number }[];
+      return reply({ user: me, provinces: PROVINCES, rows: sr ? rows.filter((r) => r.assignee_id === user.id) : rows });
     }
 
     case "days": {
       const { data, error } = await db.rpc("web_email_days");
       if (error) return reply({ error: "โหลดปฏิทินไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role, admin }, days: data });
+      return reply({ user: me, days: data });
     }
 
     case "board": {
+      if (sr) return reply({ error: "หน้านี้สำหรับ DV" }, 403);
       const days = Math.min(Math.max(Number(body.days) || 30, 1), 120);
       const { data, error } = await db.rpc("lead_board", { p_days: days, p_provinces: PROVINCES });
       if (error) return reply({ error: "โหลดรายการไม่สำเร็จ" }, 500);
-      return reply({ user: { name: user.name, role: user.role, admin }, leads: data });
+      return reply({ user: me, leads: data });
     }
 
     case "lead": {
       const key = String(body.key ?? "");
       if (!/^(P:)?[A-Z0-9]{8,20}$/.test(key)) return reply({ error: "ไม่พบ Lead นี้" }, 404);
-      const { data, error } = await db.rpc("lead_detail", { p_key: key });
-      if (error) return reply({ error: "โหลด Lead ไม่สำเร็จ" }, 500);
+      const [{ data, error }, hands] = await Promise.all([db.rpc("lead_detail", { p_key: key }), handOuts()]);
+      if (error || !hands) return reply({ error: "โหลด Lead ไม่สำเร็จ" }, 500);
       if (!data?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
-      return reply({ user: { name: user.name, role: user.role, admin }, ...data });
+      const k = String(data.lead_key || key), mine = hands.current.get(k);
+      if (sr && mine?.assignee_id !== user.id) return reply({ error: NOT_YOURS }, 403);
+      return reply({
+        user: me, ...data, assignment: mine ?? null,
+        assign_history: hands.history.filter((h) => h.lead_key === k),
+        ...(canAssign ? { sales: hands.sales } : {}),
+      });
+    }
+
+    case "assign": {
+      if (!canAssign) return reply({ error: "บัญชีนี้มอบหมายงานไม่ได้" }, 403);
+      const key = String(body.key ?? "");
+      if (!/^(P:)?[A-Z0-9]{8,20}$/.test(key)) return reply({ error: "ไม่พบ Lead นี้" }, 404);
+      const to = body.assignee_id === null || body.assignee_id === "" || body.assignee_id === undefined ? null : Number(body.assignee_id);
+      const [{ data: lead, error }, hands] = await Promise.all([db.rpc("lead_detail", { p_key: key }), handOuts()]);
+      if (error || !hands) return reply({ error: "มอบหมายไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
+      if (!lead?.announcements?.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
+      if (to !== null && !hands.sales.some((s) => s.id === to)) return reply({ error: "เลือก GXX ที่จะมอบหมาย" }, 400);
+      const k = String(lead.lead_key || key), now = hands.current.get(k)?.assignee_id ?? null;
+      if (now !== to) {
+        const { error: insErr } = await db.from("lead_assignments").insert({ lead_key: k, assignee_id: to, assigned_by: user.id });
+        if (insErr) return reply({ error: "มอบหมายไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
+      }
+      const after = await handOuts();
+      if (!after) return reply({ error: "มอบหมายแล้ว แต่โหลดข้อมูลใหม่ไม่สำเร็จ รีเฟรชหน้า" }, 500);
+      return reply({ saved: true, lead_key: k, assignment: after.current.get(k) ?? null,
+        assign_history: after.history.filter((h) => h.lead_key === k) });
+    }
+
+    case "assignments": {
+      // the มอบหมายงาน tab: who has which lead now, with the lead's status and result
+      if (sr || user.role === "viewer") return reply({ error: "หน้านี้สำหรับ DV" }, 403);
+      const hands = await handOuts();
+      if (!hands) return reply({ error: "โหลดข้อมูลการมอบหมายไม่สำเร็จ" }, 500);
+      const keys = [...hands.current.keys()];
+      const [{ data, error }, tr] = await Promise.all([
+        keys.length ? db.rpc("web_list_keys", { p_keys: keys }) : Promise.resolve({ data: [], error: null }),
+        allRows("tracking"),
+      ]);
+      if (error || tr.error) return reply({ error: "โหลดข้อมูลการมอบหมายไม่สำเร็จ" }, 500);
+      // the no-bid reasons of the latest status, from ติดตามสถานะ
+      const reasons = Object.fromEntries((tr.data as { lead_key: string; status: string; reasons?: string[] }[])
+        .filter((r) => r.status === "no_bid" && r.reasons?.length).map((r) => [r.lead_key, r.reasons]));
+      return reply({ user: me, sales: hands.sales, history: hands.history, reasons,
+        rows: withHand((data ?? []) as unknown[], hands.current) });
     }
 
     case "save": {
@@ -151,6 +270,11 @@ Deno.serve(async (req) => {
       const anns: { type: string; project_no: string | null }[] = lead?.announcements ?? [];
       if (!anns.length) return reply({ error: "ไม่พบ Lead นี้" }, 404);
       const project = String(lead.lead_key ?? "");
+      if (sr) {
+        const hands = await handOuts();
+        if (!hands) return reply({ error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง" }, 500);
+        if (hands.current.get(project || key)?.assignee_id !== user.id) return reply({ error: NOT_YOURS }, 403);
+      }
       if (!project.startsWith("P:")) {
         if (anns.some((a) => a.type === "D1" && a.project_no === project)) {
           return reply({ error: "โครงการนี้ถูกยกเลิกแล้ว บันทึกสถานะไม่ได้" }, 409);

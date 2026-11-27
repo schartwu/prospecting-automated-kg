@@ -234,6 +234,19 @@ tr:last-child td { border-bottom: 0; }
 .group > span { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
 label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .msg { font-size: 14px; min-height: 1.4em; }
+/* handing leads to Sales (phase 2) */
+.lwrap { display: grid; }
+.lwrap > .lead { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.abar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 7px 14px; font-size: 13px; color: var(--muted);
+  background: var(--soft); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 12px 12px; }
+.abar select { max-width: 100%; }
+.amsg.err { color: var(--bad); }
+.pill.who { background: var(--soft); color: var(--ink); border: 1px solid var(--line); }
+.asview { font-size: 13px; max-width: 220px; }
+@media (max-width: 640px) { .asview { max-width: 130px; } }
+.asbar { background: var(--warn-soft); color: var(--warn); text-align: center; font-size: 13px; padding: 5px 12px; }
+button.cnt { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font-variant-numeric: tabular-nums; }
+button.cnt.zero { color: var(--muted); text-decoration: none; cursor: default; }
 .msg.ok { color: var(--good); } .msg.err { color: var(--bad); }
 .timeline { display: grid; gap: 9px; border-left: 2px solid var(--line); padding-left: 12px; }
 .timeline .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -254,7 +267,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   <div class="brand">KG <span>Lead</span></div>
   <nav class="nav" id="nav" aria-label="เมนูหลัก"></nav>
   <span class="who" id="who"></span>
+  <select class="asview" id="asview" hidden aria-label="ดูในมุมมองของ"></select>
 </div></div>
+<div class="asbar" id="asbar" hidden></div>
 <main class="gutter" id="main"><div class="card empty">กำลังโหลด…</div></main>
 
 <script>
@@ -294,6 +309,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     ["tracking", "ติดตามสถานะ", '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v6h-4z"/>'],
     ["results", "ผลลัพธ์", '<path d="M7 4h10v4a5 5 0 0 1-10 0zM12 13v4M8 20h8M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'],
     ["overview", "ภาพรวม", '<path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 4v4h6V4z"/>'],
+    ["assign", "มอบหมายงาน", '<circle cx="9" cy="8" r="3.5"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1M16 11l2 2 4-4"/>'],
     ["guide", "คู่มือ", '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5"/>'],
     ["usage", "การใช้งาน", '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M16 11a3 3 0 1 0 0-6M21 20a6 6 0 0 0-4-5.6"/>'],
   ];
@@ -332,7 +348,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   const sum = (rows, k) => rows.reduce((a, r) => a + (num(r[k]) || 0), 0);
 
   function hashParams() { return new URLSearchParams(location.hash.slice(1)); }
-  const token = () => hashParams().get("t") || "";
+  // A copied lead link carries no token: the page uses the one this browser kept from the person's own link.
+  const storedToken = () => { try { return localStorage.getItem("kg-token") || ""; } catch (e) { return ""; } };
+  const token = () => hashParams().get("t") || storedToken();
   const href = (o = {}) => "#" + new URLSearchParams({ t: token(), ...o });
 
   function statusPill(s, by, at) {
@@ -345,14 +363,18 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   async function api(action, extra = {}) {
     if (!window.EGP_API) throw new Error("ยังไม่ได้ตั้งค่าที่อยู่ของระบบ ติดต่อผู้ดูแลระบบ");
     const res = await fetch(window.EGP_API, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: token(), action, ...extra }) });
+      body: JSON.stringify({ token: token(), action, ...(state.as ? { as: state.as } : {}), ...extra }) });
     let data = {};
     try { data = await res.json(); } catch (e) { /* handled below */ }
     if (!res.ok) throw new Error(data.error || "เชื่อมต่อระบบไม่สำเร็จ ลองใหม่อีกครั้ง");
     if (data.user) {
       state.user = data.user;
-      document.getElementById("who").textContent = `${data.user.name} · ${EDITORS.includes(data.user.role) ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
+      if (state.as && !data.user.viewing_as) { state.as = null; try { sessionStorage.removeItem("kg-as"); } catch (e) { /* this tab only */ } }
+      if (data.user.admin && !state.as) state.realAdmin = true;
+      document.getElementById("who").textContent = `${data.user.name} · ${state.as ? "ดูอย่างเดียว" : data.user.sr ? "เห็นเฉพาะงานที่ได้รับมอบหมาย" : EDITORS.includes(data.user.role) ? "อัปเดตสถานะได้" : "ดูอย่างเดียว"}`;
     }
+    if (data.sales) state.sales = data.sales;
+    renderAsView();
     if (data.provinces) state.provinces = data.provinces;
     return data;
   }
@@ -370,7 +392,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   setInterval(() => { if (pingView && document.visibilityState === "visible") ping(pingView, false); }, 60000);
   document.addEventListener("visibilitychange", () => { if (pingView && document.visibilityState === "visible") ping(pingView, false); });
 
-  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
+  const VIEW_NAME = { leads: "Lead", tracking: "ติดตามสถานะ", results: "ผลลัพธ์", overview: "ภาพรวม", assign: "มอบหมายงาน", guide: "คู่มือ", usage: "การใช้งาน", lead: "หน้าโครงการ" };
   let usageTimer = null;
   async function usagePage(quiet) {
     if (!quiet) main.innerHTML = '<div class="list"><div class="skeleton"></div><div class="skeleton"></div></div>';
@@ -432,15 +454,65 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // day of the latest status update.
   const state = {
     user: null, provinces: [], days: [], area: "target",
-    per: { leads: { preset: "last" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" } },
+    per: { leads: { preset: "last" }, tracking: { preset: "month" }, results: { preset: "month" }, overview: { preset: "month" }, assign: { preset: "month" } },
     cache: {}, leads: null, outcomes: null, tracking: null,
-    l: { type: "D0", score: "all", method: "all", status: "none", q: "", sort: "score", shown: 60 },
+    // phase 2: a Sale's own leads, the มอบหมายงาน tab, the Sales a lead can go to, the admin's view-as
+    mine: null, board: null, sales: [], as: (() => { try { return Number(sessionStorage.getItem("kg-as")) || null; } catch (e) { return null; } })(),
+    realAdmin: false, srInit: false, a: { pick: null },
+    l: { type: "D0", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 },
     t: { col: "all", who: "all", sort: "latest", shown: 50 },
     r: { q: "", score: "all", method: "all", shown: 100, open: null },
     o: { score: "all", method: "all" },
   };
   const per = () => state.per[currentView] || state.per.leads;
-  const mayEdit = () => !!state.user && EDITORS.includes(state.user.role);
+  const mayEdit = () => !!state.user && EDITORS.includes(state.user.role) && !state.as;
+  // A Sale (role sale, not DV / Tele) sees only the leads handed to them: งานของฉัน, ติดตามสถานะ, คู่มือ.
+  const isSR = () => !!(state.user && state.user.sr);
+  const canAssign = () => !!(state.user && state.user.can_assign) && !state.as;
+  const seesBoard = () => !!state.user && !state.user.sr && state.user.role !== "viewer";
+  const SR_VIEWS = ["leads", "tracking", "guide"];
+  const leadUrl = key => `${location.origin}${location.pathname}#${new URLSearchParams({ lead: key })}`;
+  // the text DV pastes into Line or an email: the lead in short and a link without anyone's token
+  async function copyLead(r, btn) {
+    const text = [r.title, r.dept_name, [num(r.budget_thb) !== null ? `งบ ${baht(r.budget_thb)}` : "",
+      r.bid_date ? `ยื่นซอง ${thDate(r.bid_date)}${r.bid_time ? " " + r.bid_time : ""}` : ""].filter(Boolean).join(" · "), leadUrl(r.lead_key)]
+      .filter(Boolean).join("\n");
+    try { await navigator.clipboard.writeText(text); }
+    catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+    const was = btn.textContent; btn.textContent = "✓ คัดลอกแล้ว"; setTimeout(() => { btn.textContent = was; }, 1800);
+  }
+  // who has the lead now, on every list this page holds (after handing it out or taking it back)
+  function applyHand(key, a) {
+    [...Object.values(state.cache).map(c => c.leads), state.mine].filter(Boolean).forEach(list => list.forEach(r => {
+      if (r.lead_key !== key) return;
+      ["assignee_id", "assignee", "assigned_by", "assigned_at"].forEach(k => delete r[k]);
+      if (a) Object.assign(r, a);
+    }));
+    state.board = null; state.tracking = null;
+  }
+  const handPill = r => r.assignee && !isSR() ? `<span class="pill who" title="${esc(`มอบโดย ${r.assigned_by} · ${thTime(r.assigned_at)}`)}">👤 ${esc(r.assignee)}</span>` : "";
+  const salesOptions = id => `<option value="">— ยังไม่มอบหมาย —</option>` + state.sales.map(x => `<option value="${x.id}" ${id === x.id ? "selected" : ""}>${esc(x.name)}</option>`).join("");
+  const assignBar = r => `<div class="abar"><label>มอบให้ <select data-assign="${esc(r.lead_key)}" aria-label="มอบหมายให้">${salesOptions(r.assignee_id)}</select></label>
+    <button class="btn sm" type="button" data-copy="${esc(r.lead_key)}">📋 คัดลอกลิงก์</button>
+    ${r.assigned_by ? `<span>มอบโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span>` : ""}<span class="amsg" aria-live="polite"></span></div>`;
+  // the admin's "ดูในมุมมองของ": read only, until switched back
+  function renderAsView() {
+    const sel = document.getElementById("asview"), bar = document.getElementById("asbar");
+    if (!state.realAdmin && !state.as) { sel.hidden = true; bar.hidden = true; return; }
+    sel.hidden = false;
+    const list = state.sales.some(x => x.id === state.as) || !state.as ? state.sales : [{ id: state.as, name: state.user ? state.user.name : "บัญชีที่เลือก" }, ...state.sales];
+    sel.innerHTML = `<option value="">👁 มุมมองของฉัน</option>` + list.map(x => `<option value="${x.id}" ${state.as === x.id ? "selected" : ""}>👁 ${esc(x.name)}</option>`).join("");
+    bar.hidden = !state.as;
+    bar.textContent = state.as ? `กำลังดูในมุมมองของ ${state.user ? state.user.name : ""} · ดูอย่างเดียว บันทึกไม่ได้ · เลือก “มุมมองของฉัน” เพื่อกลับ` : "";
+    sel.onchange = () => {
+      state.as = Number(sel.value) || null;
+      try { if (state.as) sessionStorage.setItem("kg-as", String(state.as)); else sessionStorage.removeItem("kg-as"); } catch (e) { /* this tab only */ }
+      Object.assign(state, { user: null, cache: {}, leads: null, outcomes: null, tracking: null, mine: null, board: null, srInit: false });
+      state.l = { type: "D0", score: "all", method: "all", status: "none", asg: "all", q: "", sort: "score", shown: 60 };
+      state.area = "target";
+      if (hashParams().get("v") === "leads" && !hashParams().get("lead")) route(); else location.hash = href({ v: "leads" });
+    };
+  }
   // A D0 whose bid day has passed and nobody gave it a status: a lead we let go by.
   const closed = r => !!(r.awarded || r.result || r.cancelled);
   // what the card's button says: update, record after the result (bid / no bid only), or just view
@@ -488,9 +560,20 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const { from, to } = per(), key = `${from}|${to}`;
     if (!state.cache[key]) {
       const [l, o] = await Promise.all([api("leads", { from, to }), api("outcomes", { from, to })]);
+      if (l.sales) state.sales = l.sales;
       state.cache[key] = { leads: groupLeads(l.rows || []), outcomes: (o.rows || []).filter(inScope) };
     }
     ({ leads: state.leads, outcomes: state.outcomes } = state.cache[key]);
+  }
+
+  // a Sale's Lead list: every lead handed to them, whatever its email day
+  async function ensureMine() {
+    if (!state.mine) state.mine = groupLeads((await api("leads", { from: FIRST_DAY, to: todayISO() })).rows || []);
+    state.leads = state.mine;
+  }
+  // the มอบหมายงาน tab: every lead someone has now, with its status and result
+  async function ensureBoard() {
+    if (!state.board) { const b = await api("assignments"); state.board = { ...b, rows: groupLeads(b.rows || []), reasons: b.reasons || {} }; }
   }
 
   // One row per project. Its announcements (ร่าง TOR → ราคากลาง → ประกาศเชิญชวน) fold into the latest one,
@@ -518,13 +601,14 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
   // ---------------- layout pieces ----------------
   function renderNav(view) {
-    document.getElementById("nav").innerHTML = VIEWS.filter(([k]) => k !== "usage" || (state.user && state.user.admin)).map(([k, label, icon]) =>
-      `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${label}</a>`).join("");
+    const shown = k => isSR() ? SR_VIEWS.includes(k) : k === "usage" ? !!(state.user && state.user.admin) : k === "assign" ? seesBoard() : true;
+    document.getElementById("nav").innerHTML = VIEWS.filter(([k]) => shown(k)).map(([k, label, icon]) =>
+      `<a href="${href({ v: k })}" ${view === k ? 'aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>${k === "leads" && isSR() ? "งานของฉัน" : label}</a>`).join("");
   }
 
   function toolbar({ period = true, area = true } = {}) {
     const p = per(), single = p.from === p.to;
-    const what = currentView === "tracking" ? "อัปเดตสถานะล่าสุด" : "อีเมลเช้า";
+    const what = currentView === "tracking" ? "อัปเดตสถานะล่าสุด" : currentView === "assign" ? "มอบหมาย" : "อีเมลเช้า";
     const periodText = (single ? `${what}วันที่ ${thDate(p.from)}` : `${what} ${thDate(p.from)} – ${thDate(p.to)}`)
       + (p.from < FIRST_DAY ? " · ข้อมูลเริ่ม 9 ต.ค. 2569" : "");
     // No min on the date inputs: any month can be picked; days before the first data show an empty list.
@@ -557,7 +641,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     main.querySelectorAll("[data-step]").forEach(b => b.onclick = () => {
       const dir = Number(b.dataset.step), d = state.days;
       // the lists step between morning-email days; the status board steps one calendar day
-      const next = currentView === "tracking" ? null : dir < 0 ? [...d].reverse().find(x => x < p.from) : d.find(x => x > p.to);
+      const next = ["tracking", "assign"].includes(currentView) ? null : dir < 0 ? [...d].reverse().find(x => x < p.from) : d.find(x => x > p.to);
       p.from = p.to = next || addDays(p.from, dir); p.preset = "custom"; rerender(true);
     });
   }
@@ -565,7 +649,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   // Render a page: toolbar stays put; data loading / errors show below it.
   async function page(view, build, opts = {}) {
     const draw = async (reload) => {
-      main.innerHTML = toolbar(opts) + `<div id="body">${reload ? '<div class="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>' : ""}</div>`;
+      main.innerHTML = (opts.bar === false ? "" : toolbar(opts)) + `<div id="body">${reload ? '<div class="list"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>' : ""}</div>`;
       bindToolbar(draw);
       const body = document.getElementById("body");
       try {
@@ -588,11 +672,12 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       : `<span>ประกาศ ${esc(thDate(r.pub_date))}</span>`;
     return `<a class="lead" href="${href({ lead: r.lead_key, from: currentView })}">
       <div style="display:grid;gap:5px;min-width:0">
-        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${leadPill(r)}${resultPill(r.result)}${changePill(r)}
+        <div class="badges"><span class="pill type">${esc(TYPE[r.type] || r.type)}</span>${methodPill(r.method)}${scoreBadge(r.score)}${leadPill(r)}${resultPill(r.result)}${changePill(r)}${handPill(r)}
           ${r.linked_plan && r.type !== "P0" ? `<span class="pill" title="หน่วยงานเดียวกันและงบเท่ากันพอดี">🔗 จับคู่กับแผน ${esc(r.linked_plan)}</span>` : ""}
           ${r.amended && !r.cancelled ? '<span class="pill st">มีการแก้ไขประกาศ</span>' : ""}</div>
         <div class="title">${esc(r.title)}</div>
         <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>${when}${trail}</div>
+        ${isSR() && r.assigned_by ? `<div class="meta"><span>มอบหมายโดย ${esc(r.assigned_by)} · ${esc(thTime(r.assigned_at))}</span></div>` : ""}
       </div>
       <div class="money"><span class="label">${r.type === "P0" ? "งบตามแผน" : "งบประมาณ"}</span>
         <span class="amt ${num(r.budget_thb) === null ? "none" : ""}">${num(r.budget_thb) === null ? "ไม่ระบุงบ" : baht(r.budget_thb)}</span>
@@ -686,6 +771,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     // opened from ภาพรวม's table by type only; their buttons show only while picked (HIDDEN_STATUS)
     ["open", "ยังไม่จบ (ไม่รวมเลยวันยื่นซอง ผู้ชนะ ยกเลิก)", isOpen], ["ended", "ประกาศผู้ชนะแล้ว / ยกเลิกแล้ว", isEnded]];
   const HIDDEN_STATUS = ["open", "ended"];
+  const ASG_FILTERS = [["all", "ทั้งหมด", () => true], ["none", "ยังไม่มอบหมาย", r => !r.assignee_id], ["done", "มอบหมายแล้ว", r => !!r.assignee_id]];
   const SORTS = { score: ["คะแนนสูงสุด แล้วงบสูงสุด", (a, b) => b.score - a.score || (num(b.budget_thb) || -1) - (num(a.budget_thb) || -1)],
     budget: ["งบสูงสุด", (a, b) => (num(b.budget_thb) ?? -1) - (num(a.budget_thb) ?? -1) || b.score - a.score],
     deadline: ["ใกล้วันยื่นซอง", (a, b) => { const x = daysTo(a.bid_date), y = daysTo(b.bid_date);
@@ -695,7 +781,9 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   function leadsPage(body, redraw) {
     const L = state.l;
     // a project whose winner is announced is no longer a lead: it shows only under "ประกาศผู้ชนะแล้ว" (or ทุกสถานะ)
-    const area = state.leads.filter(areaOk);
+    // มอบหมาย (DV / Tele / admin): every other count follows it; its own buttons count the rest
+    const area0 = state.leads.filter(areaOk), af = (ASG_FILTERS.find(f => f[0] === L.asg) || ASG_FILTERS[0])[2];
+    const area = isSR() ? area0 : area0.filter(af);
     const sf = STATUS_FILTERS.find(f => f[0] === L.status)[2];
     const q = L.q.trim().toLowerCase();
     // each button counts what pressing it would show, with the other rows as they are
@@ -705,8 +793,20 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const rows = area.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).sort(SORTS[L.sort][1]);
     const picked = [L.type !== "all" && TYPE_FILTERS.find(f => f[0] === L.type)[1], L.method !== "all" && METHOD_FILTERS.find(f => f[0] === L.method)[1],
       L.score !== "all" && SCORE_FILTERS.find(f => f[0] === L.score)[1],
-      L.status !== "all" && STATUS_FILTERS.find(f => f[0] === L.status)[1], q && `“${L.q.trim()}”`].filter(Boolean);
-    body.innerHTML = `
+      L.status !== "all" && STATUS_FILTERS.find(f => f[0] === L.status)[1], !isSR() && L.asg !== "all" && ASG_FILTERS.find(f => f[0] === L.asg)[1],
+      q && `“${L.q.trim()}”`].filter(Boolean);
+    // a Sale's summary of their own work
+    const open = isSR() ? state.leads.filter(r => !closed(r) && !["bid", "no_bid"].includes(r.status)) : [];
+    const srTop = !isSR() ? "" : `<div class="kpis">
+        <div class="kpi"><span class="label">งานที่ได้รับมอบหมาย</span><span class="value">${state.leads.length}</span><span class="sub">งบรวม ${short(sum(state.leads, "budget_thb"))}</span></div>
+        <div class="kpi alert"><span class="label">ยังไม่กดรับเรื่อง</span><span class="value">${open.filter(r => !r.status).length}</span><span class="sub">กด “รับเรื่อง” เมื่อเริ่มงาน</span></div>
+        <div class="kpi"><span class="label">กำลังทำ</span><span class="value">${open.filter(r => r.status).length}</span><span class="sub">ยังไม่ได้กดยื่น / ไม่ยื่น</span></div>
+        <div class="kpi"><span class="label">ใกล้ปิดรับซอง (7 วัน)</span><span class="value">${open.filter(r => r.type === "D0" && (d => d !== null && d >= 0 && d <= 7)(daysTo(r.bid_date))).length}</span><span class="sub">ประกาศเชิญชวนที่ยังไม่ยื่น</span></div>
+      </div>`;
+    const card = r => canAssign() ? `<div class="lwrap">${leadCard(r)}${assignBar(r)}</div>` : leadCard(r);
+    const none = isSR() ? (state.leads.length ? "ไม่มีงานตามตัวกรองนี้" : "ยังไม่มีงานที่ได้รับมอบหมาย · เมื่อ DV มอบหมายงานให้ จะขึ้นที่หน้านี้")
+      : "ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่";
+    body.innerHTML = `${srTop}
       <div class="card">
         <button class="btn ftoggle" type="button" id="ftog" aria-expanded="${!!L.fopen}"><span>ตัวกรอง: ${esc(picked.join(" · ") || "ทั้งหมด")}</span><span>${L.fopen ? "▲" : "▼"}</span></button>
         <div class="filters ${L.fopen ? "open" : ""}">
@@ -716,6 +816,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         ${scoreChips(L.score, area.filter(byType).filter(byMethod).filter(sf).filter(byText))}
         ${frow("สถานะ", STATUS_FILTERS.filter(([k]) => !HIDDEN_STATUS.includes(k) || L.status === k).map(([k, l, f]) =>
           `<button class="chip" type="button" data-status="${k}" aria-pressed="${L.status === k}">${l}<span class="n">${area.filter(byType).filter(byScore).filter(byMethod).filter(byText).filter(f).length}</span></button>`).join(""))}
+        ${isSR() ? "" : frow("มอบหมาย", ASG_FILTERS.map(([k, l, f]) =>
+          `<button class="chip" type="button" data-asg="${k}" aria-pressed="${L.asg === k}">${l}<span class="n">${area0.filter(byType).filter(byScore).filter(byMethod).filter(sf).filter(byText).filter(f).length}</span></button>`).join(""))}
         <div class="toolrow">
           <input class="txt" id="q" type="search" placeholder="ค้นหาชื่อ หน่วยงาน เลขโครงการ/แผน" value="${esc(L.q)}" aria-label="ค้นหาชื่อโครงการ หน่วยงาน จังหวัด เลขโครงการ หรือเลขแผน">
           <div class="daterow"><label class="small muted" for="sort">เรียง</label>
@@ -726,15 +828,23 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         </div>
         <div class="small muted">${rows.length.toLocaleString("th-TH")} โครงการ · งบรวม ${short(sum(rows, "budget_thb"))} · โครงการที่มีหลายประกาศแสดงครั้งเดียวตามประกาศล่าสุด</div>
       </div>
-      <div class="list">${rows.slice(0, L.shown).map(leadCard).join("") || '<div class="card empty">ไม่มี Lead ตามตัวกรองนี้ ลองเปลี่ยนช่วงเวลาหรือพื้นที่</div>'}</div>
+      <div class="list">${rows.slice(0, L.shown).map(card).join("") || `<div class="card empty">${none}</div>`}</div>
       ${rows.length > L.shown ? `<div style="text-align:center"><button class="btn" type="button" id="more">แสดงเพิ่ม (${rows.length - L.shown})</button></div>` : ""}`;
     body.querySelectorAll("[data-type]").forEach(b => b.onclick = () => { L.type = b.dataset.type; L.shown = 60; leadsPage(body, redraw); });
     body.querySelectorAll("[data-score]").forEach(b => b.onclick = () => { L.score = b.dataset.score; L.shown = 60; leadsPage(body, redraw); });
     body.querySelectorAll("[data-status]").forEach(b => b.onclick = () => { L.status = b.dataset.status; L.shown = 60; leadsPage(body, redraw); });
+    body.querySelectorAll("[data-asg]").forEach(b => b.onclick = () => { L.asg = b.dataset.asg; L.shown = 60; leadsPage(body, redraw); });
+    body.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyLead(rows.find(r => r.lead_key === b.dataset.copy), b));
+    body.querySelectorAll("[data-assign]").forEach(sel => sel.onchange = async () => {
+      const key = sel.dataset.assign, m = sel.closest(".abar").querySelector(".amsg");
+      sel.disabled = true; m.className = "amsg"; m.textContent = "กำลังบันทึก…";
+      try { const res = await api("assign", { key, assignee_id: sel.value ? Number(sel.value) : null }); applyHand(key, res.assignment); leadsPage(body, redraw); }
+      catch (e) { sel.disabled = false; m.className = "amsg err"; m.textContent = e.message; }
+    });
     document.getElementById("sort").onchange = e => { L.sort = e.target.value; leadsPage(body, redraw); };
     document.getElementById("ftog").onclick = () => { L.fopen = !L.fopen; leadsPage(body, redraw); };
     const clear = document.getElementById("clear");
-    if (clear) clear.onclick = () => { Object.assign(L, { type: "all", score: "all", method: "all", status: "all", q: "", shown: 60 }); leadsPage(body, redraw); };
+    if (clear) clear.onclick = () => { Object.assign(L, { type: "all", score: "all", method: "all", status: "all", asg: "all", q: "", shown: 60 }); leadsPage(body, redraw); };
     body.querySelectorAll("[data-method]").forEach(b => b.onclick = () => { L.method = b.dataset.method; L.shown = 60; leadsPage(body, redraw); });
     const qi = document.getElementById("q");
     qi.oninput = () => { L.q = qi.value; const p = qi.selectionStart; leadsPage(body, redraw); const n = document.getElementById("q"); n.focus(); n.setSelectionRange(p, p); };
@@ -746,7 +856,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
       "คาดว่าจะประกาศ": monthLabel(r.expected_month), "วันที่ประกาศ": r.pub_date, "หมวดสินค้า": r.category || "", "เหตุผล": r.reason || "",
       "สถานะล่าสุด": r.status ? STATUS[r.status].replace(/^\S+\s/, "") : missed(r) ? "เลยวันยื่นซอง ไม่มีใครอัปเดต" : "", "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "",
       "ผู้ชนะ": r.winners || "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "", "ยกเลิกแล้ว": r.cancelled ? "ใช่" : "",
-      "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์": r.link })));
+      "วิธีจัดหา": r.method || "", "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์": r.link,
+      "มอบหมายให้": r.assignee || "", "มอบหมายโดย": r.assigned_by || "", "วันที่มอบหมาย": r.assigned_at ? thTime(r.assigned_at) : "" })));
   }
 
   // ---------------- ติดตามสถานะ ----------------
@@ -772,7 +883,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     const row = r => { const left = daysTo(r.bid_date);
       return `<a class="lead" href="${href({ lead: r.lead_key, from: "tracking" })}">
       <div style="display:grid;gap:5px;min-width:0">
-        <div class="badges">${r.auto_result ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(r.status)}${resultPill(r.result)}${changePill(r)}${r.type ? `<span class="pill type">${esc(TYPE[r.type] || r.type)}</span>` : ""}${methodPill(r.method)}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</div>
+        <div class="badges">${r.auto_result ? '<span class="pill">ไม่มีการกดสถานะ</span>' : statusPill(r.status)}${resultPill(r.result)}${changePill(r)}${handPill(r)}${r.type ? `<span class="pill type">${esc(TYPE[r.type] || r.type)}</span>` : ""}${methodPill(r.method)}${r.cancelled ? '<span class="pill bad">ยกเลิกแล้ว</span>' : ""}</div>
         <div class="title">${esc(r.title || r.lead_key)}</div>
         <div class="meta"><span>${esc(r.dept_name || "")}</span><span>${esc(r.province || "ไม่ระบุจังหวัด")}</span>
           ${r.bid_date ? `<span class="${left !== null && left >= 0 && left <= 3 ? "urgent" : ""}">ยื่นซอง ${esc(thDate(r.bid_date))}${left !== null && left >= 0 ? ` · ${dueText(r.bid_date)}` : " · ปิดแล้ว"}</span>` : ""}</div>
@@ -803,6 +914,79 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     document.getElementById("who-f").onchange = e => { T.who = e.target.value; T.shown = 50; tracking(body); };
     document.getElementById("tsort").onchange = e => { T.sort = e.target.value; tracking(body); };
     const more = document.getElementById("more"); if (more) more.onclick = () => { T.shown += 50; tracking(body); };
+  }
+
+  // ---------------- มอบหมายงาน ----------------
+  // Leads by the Bangkok day they were handed out, counted under who has them now.
+  const bkkDay = t => new Date(new Date(t).getTime() + 7 * 3600e3).toISOString().slice(0, 10);
+  const notDecided = r => !closed(r) && !["bid", "no_bid"].includes(r.status);
+  const ASG_COLS = [
+    ["n", "ได้รับ", () => true],
+    ["none", "ยังไม่รับเรื่อง", r => !r.status && !closed(r)],
+    ["doing", "กำลังทำ", r => !!r.status && !["bid", "no_bid"].includes(r.status)],
+    ["bid", "ยื่น", bidDone],
+    ["no_bid", "ไม่ยื่น", r => r.status === "no_bid"],
+    ["win", "ชนะ", r => r.result === "win"],
+    // not taken up 2 days after it was handed out, or the bid closes within 3 days and no one decided yet
+    ["stuck", "⚠️ ค้าง", r => notDecided(r) && ((!r.status && Date.now() - new Date(r.assigned_at).getTime() > 2 * 864e5)
+      || (r.type === "D0" && (d => d !== null && d >= 0 && d <= 3)(daysTo(r.bid_date))))],
+  ];
+
+  function assignPage(body) {
+    const B = state.board, p = state.per.assign, A = state.a;
+    if (!B.rows.length) { body.innerHTML = '<div class="card empty">ยังไม่มีการมอบหมายงาน · มอบหมายได้ที่แท็บ Lead (ช่อง “มอบให้” ใต้แต่ละโครงการ) หรือในหน้าโครงการ</div>'; return; }
+    const rows = B.rows.filter(r => r.assigned_at && bkkDay(r.assigned_at) >= p.from && bkkDay(r.assigned_at) <= p.to);
+    const names = new Map((B.sales || []).map(x => [x.id, x.name]));
+    rows.forEach(r => { if (!names.has(r.assignee_id)) names.set(r.assignee_id, r.assignee); });
+    const groups = [...names].map(([id, name]) => ({ id: "g" + id, name, rows: rows.filter(r => r.assignee_id === id) }));
+    const givers = [...new Set(rows.map(r => r.assigned_by))].sort((a, b) => String(a).localeCompare(String(b), "th"))
+      .map(n => ({ id: "b" + n, name: n, rows: rows.filter(r => r.assigned_by === n) }));
+    const all = { id: "all", name: "รวม", rows };
+    const col = k => ASG_COLS.find(c => c[0] === k);
+    const cnt = (g, k) => { const n = g.rows.filter(col(k)[2]).length;
+      return n ? `<button class="cnt" type="button" data-pick="${esc(g.id)}|${k}">${n}</button>` : '<span class="muted">0</span>'; };
+    const line = (g, cls = "") => `<tr class="${cls}"><td>${esc(g.name)}</td><td class="num">${cnt(g, "n")}</td><td class="num money">${short(sum(g.rows, "budget_thb"))}</td>${ASG_COLS.slice(1).map(([k]) => `<td class="num">${cnt(g, k)}</td>`).join("")}</tr>`;
+    const head = first => `<thead><tr><th>${first}</th><th class="c">ได้รับ</th><th class="c">มูลค่า</th>${ASG_COLS.slice(1).map(([, l]) => `<th class="c">${l}</th>`).join("")}</tr></thead>`;
+    const bids = rows.filter(bidDone), wins = rows.filter(r => r.result === "win"), taken = rows.filter(r => r.status);
+    const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+    const reasonCount = new Map();
+    rows.filter(r => r.status === "no_bid").forEach(r => (B.reasons[r.lead_key] || []).forEach(x => reasonCount.set(x, (reasonCount.get(x) || 0) + 1)));
+    let drill = "";
+    if (A.pick) {
+      const cut = A.pick.lastIndexOf("|"), gid = A.pick.slice(0, cut), k = A.pick.slice(cut + 1);
+      const g = [all, ...groups, ...givers].find(x => x.id === gid);
+      if (g && col(k)) {
+        const list = g.rows.filter(col(k)[2]).sort(SORTS.deadline[1]);
+        drill = `<div class="card" id="drill"><div class="section-head"><h2>${esc(g.name)} · ${esc(col(k)[1])} (${list.length})</h2><button class="btn sm" type="button" id="undrill">ปิด</button></div>
+          <div class="list">${list.map(leadCard).join("") || '<div class="small muted">ไม่มีรายการ</div>'}</div></div>`;
+      } else A.pick = null;
+    }
+    body.innerHTML = `
+      <div class="kpis">
+        <div class="kpi"><span class="label">มอบหมายแล้ว</span><span class="value">${rows.length}</span><span class="sub">งบรวม ${short(sum(rows, "budget_thb"))}</span></div>
+        <div class="kpi"><span class="label">รับเรื่องแล้ว</span><span class="value">${pct(taken.length, rows.length)}%</span><span class="sub">${taken.length} จาก ${rows.length} งาน</span></div>
+        <div class="kpi"><span class="label">ยื่นราคาแล้ว</span><span class="value">${bids.length}</span><span class="sub">งบรวม ${short(sum(bids, "budget_thb"))}</span></div>
+        <div class="kpi win"><span class="label">OfficeMate ชนะ</span><span class="value">${wins.length}</span><span class="sub">ราคาที่ชนะรวม ${short(sum(wins, "winner_price"))}</span></div>
+      </div>
+      <div class="card"><div class="section-head"><h2>ราย GXX (Sales)</h2><button class="btn" type="button" id="dl">⬇ Excel</button></div>
+        <div class="small muted" style="margin-bottom:6px">นับงานที่มอบหมายในช่วงนี้ ตามคนที่ถืองานอยู่ตอนนี้ · ⚠️ ค้าง = ยังไม่กดรับเรื่องเกิน 2 วันหลังมอบหมาย หรือใกล้ปิดรับซอง (3 วัน) แต่ยังไม่ได้กดยื่น / ไม่ยื่น · กดตัวเลขเพื่อดูรายการ</div>
+        <div class="tbl"><table>${head("GXX")}<tbody>${groups.map(g => line(g)).join("")}${line(all, "total")}</tbody></table></div></div>
+      ${drill}
+      <div class="card"><h2>รายผู้มอบหมาย</h2>
+        ${givers.length ? `<div class="tbl"><table>${head("ผู้มอบหมาย")}<tbody>${givers.map(g => line(g)).join("")}</tbody></table></div>` : '<div class="small muted">ไม่มีการมอบหมายในช่วงนี้</div>'}</div>
+      <div class="card"><h2>เหตุผลที่ไม่ยื่น</h2>
+        ${reasonCount.size ? `<div class="tbl"><table><thead><tr><th>เหตุผล</th><th class="c">งาน</th></tr></thead><tbody>${[...reasonCount].sort((a, b) => b[1] - a[1]).map(([x, n]) =>
+          `<tr><td>${esc(x)}</td><td class="num">${n}</td></tr>`).join("")}</tbody></table></div>` : '<div class="small muted">ไม่มีงานที่ไม่ยื่นในช่วงนี้</div>'}</div>`;
+    body.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => { A.pick = b.dataset.pick; assignPage(body); document.getElementById("drill")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    const un = document.getElementById("undrill"); if (un) un.onclick = () => { A.pick = null; assignPage(body); };
+    document.getElementById("dl").onclick = () => download("มอบหมายงาน", rows.map(r => ({
+      "มอบหมายให้": r.assignee || "", "มอบหมายโดย": r.assigned_by || "", "วันที่มอบหมาย": thTime(r.assigned_at),
+      "ประเภทประกาศ (ล่าสุด)": TYPE[r.type] || r.type, "ชื่อโครงการ": r.title, "หน่วยงาน": r.dept_name, "จังหวัด": r.province || "",
+      "งบประมาณ (บาท)": num(r.budget_thb) ?? "", "วันยื่นซอง": r.bid_date || "",
+      "สถานะล่าสุด": r.status ? (STATUS[r.status] || r.status).replace(/^\S+\s/, "") : "", "ผู้กดสถานะ": r.status_by || "",
+      "เหตุผลที่ไม่ยื่น": r.status === "no_bid" ? (B.reasons[r.lead_key] || []).join(", ") : "",
+      "ผล": r.result ? RESULT[r.result][0].replace("🏆 ", "") : "", "ราคาที่ชนะ (บาท)": num(r.winner_price) ?? "",
+      "เลขโครงการ": r.project_no || "", "เลขแผน": r.plan_no || r.linked_plan || "", "ลิงก์ KG Lead": leadUrl(r.lead_key) })));
   }
 
   // ---------------- ผลลัพธ์ ----------------
@@ -967,7 +1151,15 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
   function renderLead() {
     const { data } = current;
-    const anns = data.announcements, s = leadSummary(anns), isDV = EDITORS.includes(data.user.role);
+    const anns = data.announcements, s = leadSummary(anns), isDV = EDITORS.includes(data.user.role) && !state.as;
+    const asg = data.assignment, hist = data.assign_history || [];
+    const asgCard = isSR() ? (asg ? `<div class="card"><h2>การมอบหมาย</h2><div class="small">มอบหมายให้คุณโดย <b>${esc(asg.assigned_by)}</b> · ${esc(thTime(asg.assigned_at))}</div></div>` : "")
+      : `<div class="card"><h2>มอบหมายงาน</h2>
+        ${canAssign() ? `<div class="toolrow"><label class="daterow">มอบให้ <select id="asg-sel" aria-label="มอบหมายให้">${salesOptions(asg ? asg.assignee_id : null)}</select></label>
+          <button class="btn sm" type="button" id="asg-copy">📋 คัดลอกลิงก์</button></div><div class="msg" id="asg-msg" aria-live="polite"></div>`
+          : `<div class="small">${asg ? `มอบหมายให้ <b>${esc(asg.assignee)}</b> โดย ${esc(asg.assigned_by)} · ${esc(thTime(asg.assigned_at))}` : "ยังไม่มอบหมาย"}</div>`}
+        ${hist.length ? `<div class="timeline">${[...hist].reverse().map(h => `<div><div class="when">${esc(thTime(h.at))} · ${esc(h.assigned_by)}</div>
+          <div>${h.assignee ? "มอบให้ " + esc(h.assignee) : "ยกเลิกการมอบหมาย"}</div></div>`).join("")}</div>` : ""}</div>`;
     const events = data.events || [], last = events[events.length - 1];
     const left = s.d0 ? daysTo(s.d0.bid_date) : null;
     const aw = s.award, named = aw && Array.isArray(aw.winners) && aw.winners.length ? aw.winners.join(", ") : null;
@@ -1009,7 +1201,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         <div><div class="small muted amt-label">งบประมาณ</div><div class="amt">${s.budget === null ? '<span class="muted" style="font-size:16px">ไม่ระบุงบ</span>' : baht(s.budget)}</div></div>
       </div>
       <div class="two">
-        <div style="display:grid;gap:14px">${form}
+        <div style="display:grid;gap:14px">${asgCard}${form}
           <div class="card"><h2>ประวัติ</h2><div class="timeline">${events.length ? events.map(e => `<div><div class="when">${esc(thTime(e.at))} · ${esc(e.by)}${afterResult(e) ? ' · <span class="pill">บันทึกหลังประกาศผล</span>' : ""}</div>
             <div>${esc(STATUS[e.status] || e.status)}${e.reasons && e.reasons.length ? " · " + esc(e.reasons.join(", ")) : ""}${e.bid_price !== null && e.bid_price !== undefined ? " · " + baht(e.bid_price) : ""}</div>
             ${e.note ? `<div class="small muted">${esc(e.note)}</div>` : ""}</div>`).join("") : '<div class="small muted">ยังไม่มีการอัปเดตสถานะ</div>'}</div></div>
@@ -1023,6 +1215,22 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
               ${a.method ? `<span>${esc(a.method)}</span>` : ""}</div></div>`).join("")}</div></div>
         </div>
       </div>`;
+    const asel = document.getElementById("asg-sel");
+    if (asel) {
+      document.getElementById("asg-copy").onclick = e => copyLead({ title: s.main.title, dept_name: s.main.dept_name, budget_thb: s.budget,
+        bid_date: s.d0 && s.d0.bid_date, bid_time: s.d0 && s.d0.bid_time, lead_key: current.key }, e.currentTarget);
+      asel.onchange = async () => {
+        const m = document.getElementById("asg-msg");
+        asel.disabled = true; m.className = "msg"; m.textContent = "กำลังบันทึก…";
+        try {
+          const res = await api("assign", { key: current.key, assignee_id: asel.value ? Number(asel.value) : null });
+          Object.assign(current.data, { assignment: res.assignment, assign_history: res.assign_history });
+          applyHand(current.key, res.assignment);
+          renderLead();
+          const m2 = document.getElementById("asg-msg"); m2.className = "msg ok"; m2.textContent = res.assignment ? `มอบหมายให้ ${res.assignment.assignee} แล้ว` : "ยกเลิกการมอบหมายแล้ว";
+        } catch (e) { asel.disabled = false; m.className = "msg err"; m.textContent = e.message; }
+      };
+    }
     if (!isDV || (locked && !retro)) return;
     const f = document.getElementById("form");
     f.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
@@ -1048,7 +1256,7 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
         const res = await api("save", { key: current.key, status: current.status, reasons: [...current.reasons],
           bid_price: current.status === "bid" ? document.getElementById("price").value.trim() : null, note });
         current.data.events = res.events; current.status = null; current.reasons = new Set();
-        state.cache = {}; state.tracking = null;           // lists show the new status next time
+        state.cache = {}; state.tracking = null; state.mine = null; state.board = null;   // lists show the new status next time
         renderLead();
         const m = document.getElementById("msg"); m.className = "msg ok"; m.textContent = "บันทึกแล้ว";
       } catch (e) { btn.disabled = false; err(e.message); }
@@ -1060,14 +1268,16 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 
   async function route() {
     const p = hashParams();
+    // keep the person's own link in this browser, so a lead link a colleague copies (no token) opens too
+    if (/^[0-9a-f]{64}$/.test(p.get("t") || "")) { try { localStorage.setItem("kg-token", p.get("t")); } catch (e) { /* the link still works */ } }
     if (!/^[0-9a-f]{64}$/.test(token())) {
       renderNav(null);
-      main.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert</div>';
+      main.innerHTML = '<div class="card empty">เปิดหน้านี้จากปุ่ม “อัปเดตสถานะ” หรือลิงก์ KG Lead ในอีเมล e-GP Alert · ถ้าเปิดจากลิงก์ที่ทีมส่งให้ ให้เปิดลิงก์ KG Lead ของคุณจากอีเมลก่อน 1 ครั้งในเบราว์เซอร์นี้</div>';
       return;
     }
     window.scrollTo(0, 0);
     const lead = p.get("lead");
-    const view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
+    let view = VIEWS.some(v => v[0] === p.get("v")) ? p.get("v") : "leads";
     // a link with a filter value the page does not know (old or mistyped) falls back to the default
     const methodKey = k => METHOD_FILTERS.some(f => f[0] === k) ? k : "all";
     const known = (list, k, dflt) => list.some(f => f[0] === k) ? k : dflt;
@@ -1082,8 +1292,14 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     currentView = view;
     renderNav(view);
     try {
-      if (!state.days.length) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
+      if (!state.days.length || !state.user) { state.days = (await api("days")).days || []; Object.values(state.per).forEach(x => applyPreset(x.preset, x)); }
     } catch (e) { main.innerHTML = `<div class="card empty error">${esc(e.message)}</div>`; return; }
+    // a Sale has งานของฉัน, ติดตามสถานะ and คู่มือ; มอบหมายงาน is for DV / Tele / the admin
+    if ((isSR() && !SR_VIEWS.includes(view)) || (view === "assign" && !seesBoard())) {
+      view = "leads"; currentView = view; history.replaceState(null, "", href({ v: view }));
+    }
+    // a Sale's list starts with all of their work, nearest bid day first
+    if (isSR() && !state.srInit) { state.srInit = true; state.area = "all"; Object.assign(state.l, { type: "all", score: "all", method: "all", status: "all", asg: "all", sort: "deadline", shown: 60 }); }
     renderNav(view);  // now the account is known (the usage tab shows for admins only)
     ping(view, true);
     const sync = state.per[p.get("sync")];
@@ -1095,6 +1311,8 @@ label.fld { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
     if (view === "guide") return guide();
     if (view === "usage") { currentView = "usage"; return usagePage(); }
     if (view === "tracking") return page(view, tracking, { load: async () => { if (!state.tracking) state.tracking = (await api("tracking")).rows || []; } });
+    if (view === "assign") return page(view, assignPage, { load: ensureBoard, area: false });
+    if (view === "leads" && isSR()) return page(view, leadsPage, { load: ensureMine, bar: false });
     const build = { overview, leads: leadsPage, results }[view];
     return page(view, build, { load: ensureRange });
   }
